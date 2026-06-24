@@ -1,0 +1,33 @@
+[
+    {
+        "UpdateStageName": "MinIO Download",
+        "UpdateSourcePlatform": "Windows",
+        "UpdateSource": "FetchURL",
+        "UpdateSourceData": "https://dl.min.io/server/minio/release/windows-amd64/minio.exe",
+        "UpdateSourceTarget": "{{$FullBaseDir}}",
+        "UpdateSourceArgs": "minio.exe",
+        "UnzipUpdateSource": false,
+        "OverwriteExistingFiles": true,
+        "SkipOnFailure": false
+    },
+    {
+        "UpdateStageName": "MinIO Download",
+        "UpdateSourcePlatform": "Linux",
+        "UpdateSourceArch": "x86_64",
+        "UpdateSource": "FetchURL",
+        "UpdateSourceData": "https://dl.min.io/server/minio/release/linux-amd64/minio",
+        "UpdateSourceTarget": "{{$FullBaseDir}}",
+        "UpdateSourceArgs": "minio",
+        "UnzipUpdateSource": false,
+        "OverwriteExistingFiles": true,
+        "SkipOnFailure": false
+    },
+    {
+        "UpdateStageName": "Set Executable Flag",
+        "UpdateSourcePlatform": "Linux",
+        "UpdateSourceArch": "x86_64",
+        "UpdateSource": "SetExecutableFlag",
+        "UpdateSourceArgs": "{{$FullBaseDir}}minio",
+        "SkipOnFailure": false
+    }
+]

@@ -1,0 +1,19 @@
+[
+    {
+        "Protocol": "TCP",
+        "Port": 9000,
+        "Ref": "ApplicationPort1",
+        "Name": "S3 API",
+        "Description": "MinIO S3-compatible API endpoint",
+        "ChildPorts": [
+            {
+                "Protocol": "TCP",
+                "Port": 9001,
+                "Offset": 1,
+                "Ref": "ApplicationPort2",
+                "Name": "Web Console",
+                "Description": "MinIO browser-based management console"
+            }
+        ]
+    }
+]
