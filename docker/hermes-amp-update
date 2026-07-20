@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# The AMP Update action runs this command. Hermes state remains in /AMP/.hermes,
-# while the image only supplies the bootstrap dependencies and supervisor.
+# The AMP Update action runs this command. Hermes state remains in
+# /AMP/hermes-agent/.hermes, below the application directory visible in AMP's file browser.
+# The image only supplies the bootstrap dependencies and supervisor.
 set -euo pipefail
 
-HERMES_HOME="${HERMES_HOME:-/AMP/.hermes}"
+HERMES_HOME="${HERMES_HOME:-/AMP/hermes-agent/.hermes}"
 VENV="${HERMES_HOME}/venv"
 REQUESTED_VERSION="${HERMES_AGENT_VERSION:-latest}"
 

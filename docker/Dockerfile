@@ -22,8 +22,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY docker/hermes-amp-update /usr/local/bin/hermes-amp-update
+COPY docker/hermes-amp-run /usr/local/bin/hermes-amp-run
 COPY docker/hermes-agent.conf /etc/supervisor/conf.d/hermes-agent.conf
-RUN chmod 0755 /usr/local/bin/hermes-amp-update
+RUN chmod 0755 /usr/local/bin/hermes-amp-update /usr/local/bin/hermes-amp-run
 
 ENTRYPOINT ["/ampstart.sh"]
 CMD []

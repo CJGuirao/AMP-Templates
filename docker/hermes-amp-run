@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Runs on every AMP instance start. AMP's settings are the source of truth for
+# dashboard credentials; write the required config.yaml auth provider before
+# supervisor launches the externally reachable dashboard.
+set -euo pipefail
+
+HERMES_HOME="${HERMES_HOME:-/AMP/hermes-agent/.hermes}"
+VENV="${HERMES_HOME}/venv"
+
+if [[ ! -x "${VENV}/bin/hermes" ]]; then
+  echo "Hermes Agent is not installed. Run AMP Update before starting this instance." >&2
+  exit 2
+fi
+
+for variable in \
+  HERMES_DASHBOARD_BASIC_AUTH_USERNAME \
+  HERMES_DASHBOARD_BASIC_AUTH_PASSWORD \
+  HERMES_DASHBOARD_BASIC_AUTH_SECRET; do
+  if [[ -z "${!variable:-}" ]]; then
+    echo "Required AMP setting ${variable} is empty. Configure the dashboard credentials, then restart the instance." >&2
+    exit 2
+  fi
+done
+
+"${VENV}/bin/python" - <<'PY'
+import os
+import tempfile
+from pathlib import Path
+
+import yaml
+from plugins.dashboard_auth.basic import hash_password
+
+home = Path(os.environ.get("HERMES_HOME", "/AMP/hermes-agent/.hermes"))
+config_path = home / "config.yaml"
+try:
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+except FileNotFoundError:
+    config = {}
+if not isinstance(config, dict):
+    raise SystemExit(f"Refusing to replace non-mapping configuration: {config_path}")
+
+dashboard = config.setdefault("dashboard", {})
+if not isinstance(dashboard, dict):
+    raise SystemExit("Refusing to replace non-mapping dashboard configuration")
+basic_auth = dashboard.setdefault("basic_auth", {})
+if not isinstance(basic_auth, dict):
+    raise SystemExit("Refusing to replace non-mapping dashboard.basic_auth configuration")
+
+basic_auth["username"] = os.environ["HERMES_DASHBOARD_BASIC_AUTH_USERNAME"]
+basic_auth["password_hash"] = hash_password(os.environ["HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"])
+basic_auth["secret"] = os.environ["HERMES_DASHBOARD_BASIC_AUTH_SECRET"]
+
+home.mkdir(parents=True, exist_ok=True)
+with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=home, prefix="config.", suffix=".tmp", delete=False) as handle:
+    yaml.safe_dump(config, handle, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    temporary_path = Path(handle.name)
+temporary_path.replace(config_path)
+PY
+
+exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/hermes-agent.conf
