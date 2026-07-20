@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# The AMP Update action runs this command. Hermes state remains in /AMP/.hermes,
+# while the image only supplies the bootstrap dependencies and supervisor.
+set -euo pipefail
+
+HERMES_HOME="${HERMES_HOME:-/AMP/.hermes}"
+VENV="${HERMES_HOME}/venv"
+REQUESTED_VERSION="${HERMES_AGENT_VERSION:-latest}"
+
+mkdir -p "${HERMES_HOME}" "${HERMES_HOME}/home"
+
+if [[ ! -x "${VENV}/bin/python" ]]; then
+  echo "Creating persistent Hermes virtual environment at ${VENV}"
+  python3 -m venv "${VENV}"
+fi
+
+before="not installed"
+if [[ -x "${VENV}/bin/hermes" ]]; then
+  before="$("${VENV}/bin/hermes" --version 2>&1 || true)"
+fi
+
+case "${REQUESTED_VERSION}" in
+  latest|"") package='hermes-agent[all]' ;;
+  *)
+    if [[ ! "${REQUESTED_VERSION}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
+      echo "Invalid Hermes Agent version '${REQUESTED_VERSION}'. Use 'latest' or an exact PyPI version." >&2
+      exit 2
+    fi
+    package="hermes-agent[all]==${REQUESTED_VERSION}"
+    ;;
+esac
+
+echo "Hermes Agent before update: ${before}"
+echo "Checking PyPI and installing: ${package}"
+"${VENV}/bin/python" -m pip install --upgrade pip setuptools wheel
+"${VENV}/bin/python" -m pip install --upgrade --upgrade-strategy eager "${package}"
+echo "Hermes Agent after update: $("${VENV}/bin/hermes" --version)"
+echo "Update complete. Restart the AMP instance to run the updated gateway and dashboard."

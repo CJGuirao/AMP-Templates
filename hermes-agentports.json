@@ -1,0 +1,16 @@
+[
+  {
+    "Protocol": "TCP",
+    "Port": 9119,
+    "Ref": "ApplicationPort1",
+    "Name": "Hermes Web Dashboard",
+    "Description": "Authenticated Hermes Agent dashboard and browser chat interface"
+  },
+  {
+    "Protocol": "TCP",
+    "Port": 8642,
+    "Ref": "ApplicationPort2",
+    "Name": "Hermes API Server",
+    "Description": "Optional OpenAI-compatible API server; it listens only when enabled and configured"
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {
+    "UpdateStageName": "Hermes Agent PyPI upgrade check and install",
+    "UpdateSourcePlatform": "Linux",
+    "UpdateSource": "Executable",
+    "UpdateSourceData": "/usr/local/bin/hermes-amp-update",
+    "UpdateSourceArgs": "",
+    "SkipOnFailure": false
+  }
+]
