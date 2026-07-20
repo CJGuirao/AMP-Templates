@@ -5,6 +5,7 @@
 set -euo pipefail
 
 HERMES_HOME="${HERMES_HOME:-/AMP/hermes-agent/.hermes}"
+export HERMES_HOME
 VENV="${HERMES_HOME}/venv"
 
 if [[ ! -x "${VENV}/bin/hermes" ]]; then
