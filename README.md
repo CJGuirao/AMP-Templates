@@ -33,6 +33,10 @@ Use AMP's **Update** button whenever you want to upgrade Hermes Agent. The templ
 
 Restart the AMP instance after a successful update. The persistent `/AMP/hermes-agent/.hermes` data directory is not replaced by an application update.
 
+### Telegram
+
+The AMP Configurator exposes an optional **Telegram Bot Token** and **Telegram Allowed User IDs** field. Set both to enable Telegram safely. The allowlist must contain numeric Telegram user IDs, not usernames, and maps directly to `TELEGRAM_ALLOWED_USERS`; use `@userinfobot` to retrieve your numeric ID. Restart the instance after changing these settings.
+
 ### Cron
 
 The running gateway owns the scheduler. After a model/provider is configured, create and manage recurring jobs through the dashboard **Cron** page, the embedded browser chat, or `hermes cron` in the instance console. Scheduled jobs persist at `/AMP/hermes-agent/.hermes/cron/`.

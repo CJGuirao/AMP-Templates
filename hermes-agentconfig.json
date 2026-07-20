@@ -60,6 +60,36 @@
     "EnumValues": {}
   },
   {
+    "DisplayName": "Telegram Bot Token",
+    "Description": "Optional token from @BotFather. Supplying a token enables the Hermes Telegram gateway integration; keep it secret and revoke it in BotFather if exposed.",
+    "Keywords": "telegram,bot,bottoken,botfather,gateway,messaging",
+    "FieldName": "TelegramBotToken",
+    "InputType": "password",
+    "Category": "Hermes Agent:brain",
+    "Subcategory": "Telegram:telegram:2",
+    "ParamFieldName": "TelegramBotToken",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "",
+    "Placeholder": "123456789:AA...",
+    "EnumValues": {}
+  },
+  {
+    "DisplayName": "Telegram Allowed User IDs",
+    "Description": "Comma-separated numeric Telegram user IDs allowed to use the bot, for example 123456789,987654321. This is not a Telegram username. Find an ID through @userinfobot. Leave blank only when Telegram is disabled.",
+    "Keywords": "telegram,allowlist,allowed,users,user-id,security,gateway",
+    "FieldName": "TelegramAllowedUsers",
+    "InputType": "text",
+    "Category": "Hermes Agent:brain",
+    "Subcategory": "Telegram:telegram:2",
+    "ParamFieldName": "TelegramAllowedUsers",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "",
+    "Placeholder": "123456789,987654321",
+    "EnumValues": {}
+  },
+  {
     "DisplayName": "Timezone",
     "Description": "IANA timezone used by Hermes and scheduled cron jobs, for example Europe/Madrid or UTC.",
     "Keywords": "timezone,time,cron,schedule",
