@@ -61,11 +61,21 @@ PY
 # Keep the bootstrap as AMP's signal target. AMP can abort while the instance is
 # still starting; forward that signal through Supervisor so both dashboard and
 # gateway process groups are stopped before AMP can start a replacement.
+reap_hermes_children() {
+  # Safety net: only target this instance's dashboard/gateway commands under
+  # its configured HERMES_HOME, never every `hermes` process on the host.
+  local pattern="${HERMES_HOME}/venv/bin/hermes (gateway run|dashboard)"
+  pkill -TERM -f -- "${pattern}" 2>/dev/null || true
+  sleep 2
+  pkill -KILL -f -- "${pattern}" 2>/dev/null || true
+}
+
 stop_supervisor() {
   echo "AMP stop requested; stopping Hermes dashboard and gateway."
   # Supervisor handles its configured child process groups on SIGTERM.
   kill -TERM "${supervisor_pid}" 2>/dev/null || true
   wait "${supervisor_pid}" 2>/dev/null || true
+  reap_hermes_children
   exit 0
 }
 
