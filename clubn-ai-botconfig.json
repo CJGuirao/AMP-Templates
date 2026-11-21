@@ -104,6 +104,35 @@
     }
   },
   {
+    "DisplayName": "System Prompt",
+    "Description": "Extra instructions for how the bot answers, for example what to focus on or how to format answers. Write \\n for a new line. It cannot override the fixed rules: answers still come only from cited sources, and the server rules and safety checks still apply.",
+    "Keywords": "prompt,system,instructions,behaviour",
+    "FieldName": "SystemPrompt",
+    "InputType": "text",
+    "Category": "ClubÑ AI Bot:smart_toy",
+    "Subcategory": "Answer Style:theater_comedy:2",
+    "ParamFieldName": "SystemPrompt",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "",
+    "Placeholder": "Prioriza la información del club. Termina con una frase corta animando a participar.",
+    "EnumValues": {}
+  },
+  {
+    "DisplayName": "Personality",
+    "Description": "Tone and style of the answers. It changes how the bot writes, never what it claims. Write \\n for a new line.",
+    "Keywords": "personality,tone,style,persona",
+    "FieldName": "Personality",
+    "InputType": "text",
+    "Category": "ClubÑ AI Bot:smart_toy",
+    "Subcategory": "Answer Style:theater_comedy:2",
+    "ParamFieldName": "Personality",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "Cercano, amable y claro, como un miembro veterano de Club Ñ. Tutea a quien pregunta y usa pocos emojis.",
+    "EnumValues": {}
+  },
+  {
     "DisplayName": "Model",
     "Description": "Ollama model to run. Default is Liquid AI LFM3-1.7B in the quantization-aware Q4_0 build (about 1 GB). Use hf.co/LiquidAI/LFM3-1.7B-GGUF:Q8_0 (about 1.9 GB) for slightly better quality if RAM allows. It is downloaded on the first Update or start.",
     "Keywords": "model,lfm3,liquid,ollama",

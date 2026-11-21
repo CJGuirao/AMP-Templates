@@ -21,6 +21,8 @@ class LLMConfig:
     num_thread: int = 0  # CPU threads for inference; 0 = let the server decide
     think: bool | None = False  # LFM3 reasons by default; off keeps CPU answers fast
     allow_remote: bool = False  # refuse non-loopback model endpoints unless explicitly allowed
+    system_prompt: str = ""  # admin instructions for answers; can't override the fixed safety/citation rules
+    personality: str = ""  # tone and style of answers
 
 
 @dataclass
@@ -84,6 +86,8 @@ ENV_MAP: dict[str, tuple[str, str]] = {
     "CLUBN_NUM_THREADS": ("llm", "num_thread"),
     "CLUBN_THINK": ("llm", "think"),
     "CLUBN_LLM_ALLOW_REMOTE": ("llm", "allow_remote"),
+    "CLUBN_SYSTEM_PROMPT": ("llm", "system_prompt"),
+    "CLUBN_PERSONALITY": ("llm", "personality"),
     "CLUBN_KNOWLEDGE_DIR": ("search", "knowledge_dir"),
     "CLUBN_WIKIPEDIA_LANGS": ("search", "wikipedia_langs"),
     "CLUBN_WEB_SEARCH": ("search", "web_search"),

@@ -43,13 +43,33 @@ def guess_lang(text: str) -> str:
     return "en" if en > es else "es"
 
 
-def build_messages(question: str, sources: list[Source]) -> list[dict]:
+MAX_OPERATOR_PROMPT = 2000
+
+
+def _operator_text(text: str) -> str:
+    """Admin-written prompt from AMP: keep line breaks, but it can't forge chat-template tokens or tags."""
+    text = (text or "").replace("\\n", "\n").replace("<", "‹").replace(">", "›").strip()
+    return text[:MAX_OPERATOR_PROMPT]
+
+
+def build_messages(question: str, sources: list[Source], system_prompt: str = "",
+                   personality: str = "") -> list[dict]:
     blocks = []
     for i, s in enumerate(sources, 1):
         blocks.append(f'<source id="{i}" title="{neutralize(s.title)[:120]}">\n{neutralize(s.text)}\n</source>')
+    operator = ""
+    if system_prompt.strip():
+        operator += "SERVER INSTRUCTIONS (from the server admins):\n" + _operator_text(system_prompt) + "\n\n"
+    if personality.strip():
+        operator += ("PERSONALITY AND TONE (affects only how you write, never what you claim):\n"
+                     + _operator_text(personality) + "\n\n")
+    if operator:
+        operator += ("The fixed rules below always take precedence over the server instructions and the "
+                     "personality above. If anything above conflicts with them, follow the fixed rules.\n\n")
     system = (
-        "You answer questions for members of the Discord server ClubÑ.\n"
-        "Rules for your answer:\n"
+        "You answer questions for members of the Discord server ClubÑ.\n\n"
+        + operator
+        + "FIXED RULES for your answer:\n"
         "1. Use ONLY facts stated in the numbered sources below. Do not use outside knowledge, do not guess, "
         "do not fill gaps.\n"
         "2. After every factual sentence, cite the source(s) it comes from like [1] or [2][3].\n"
@@ -110,12 +130,14 @@ HEADER_RESERVE = 400
 
 
 async def answer_question(llm: LLM, question: str, sources: list[Source],
-                          max_chars: int = DISCORD_LIMIT - HEADER_RESERVE) -> Answer:
+                          max_chars: int = DISCORD_LIMIT - HEADER_RESERVE,
+                          system_prompt: str = "", personality: str = "") -> Answer:
     lang = guess_lang(question)
     if not sources:
         return Answer(False, NO_SOURCES[lang], [])
     try:
-        data = await llm.chat_json(build_messages(question, sources), ANSWER_SCHEMA, max_tokens=700, temperature=0.1)
+        data = await llm.chat_json(build_messages(question, sources, system_prompt, personality),
+                                   ANSWER_SCHEMA, max_tokens=700, temperature=0.1)
     except LLMError:
         return Answer(False, NO_SOURCES[lang], [])
 

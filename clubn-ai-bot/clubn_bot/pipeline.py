@@ -99,7 +99,9 @@ class Pipeline:
             return res
 
         sources = await self.retriever.gather(question, verdict.search_queries)
-        ans = await answer_question(self.llm, question, sources)
+        ans = await answer_question(self.llm, question, sources,
+                                    system_prompt=self.cfg.llm.system_prompt,
+                                    personality=self.cfg.llm.personality)
         if not ans.ok:
             res = Result("no_sources", public_text=NO_SOURCES[lang], category="ok")
         elif not await self.moderator.check_answer(question, ans.text):

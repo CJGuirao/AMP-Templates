@@ -84,6 +84,8 @@ To update the bot later, press Update and restart. "Bot Source Version" can pin 
 | Allowed Channel IDs / Role IDs | `CLUBN_ALLOWED_CHANNEL_IDS` / `CLUBN_ALLOWED_ROLE_IDS` | blank = all |
 | Moderation Log Channel ID | `CLUBN_MOD_LOG_CHANNEL_ID` | blank |
 | Answer When Mentioned | `CLUBN_ANSWER_ON_MENTION` | off |
+| System Prompt | `CLUBN_SYSTEM_PROMPT` | blank (`\n` = new line) |
+| Personality | `CLUBN_PERSONALITY` | friendly Club Ñ veteran, informal "tú" |
 | Model | `CLUBN_MODEL` | `hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0` |
 | Unload Model After Idle | `CLUBN_KEEP_ALIVE` | `5m` |
 | Context Size | `CLUBN_NUM_CTX` | `8192` |
@@ -100,6 +102,15 @@ To update the bot later, press Update and restart. "Bot Source Version" can pin 
 | Blocked Source Domains | `CLUBN_BLOCKED_DOMAINS` | blank |
 | Bot Source Repository / Version | `CLUBN_SOURCE_REPO` / `CLUBN_SOURCE_REF` | `CJGuirao/AMP-Templates` / `main` |
 | Timezone | `TZ` | `Europe/Madrid` |
+
+## System prompt and personality
+
+"System Prompt" and "Personality" in the AMP settings shape the answers: what to focus on, format,
+tone. They are placed before the bot's fixed rules, and the prompt tells the model the fixed rules win
+on any conflict. More importantly, the guarantees don't depend on the model obeying: the rules check
+happens before (with its own prompt, which these settings don't touch), and after the model answers
+the code still drops any answer without a valid citation, strips links and mentions, and runs the
+output check against the server rules. Both fields are limited to 2000 characters each.
 
 ## Security
 
