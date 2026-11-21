@@ -85,6 +85,10 @@ class RateLimiter:
         h.append(now)
         return None
 
+    def refund(self, user_id: int) -> None:
+        if self._hist[user_id]:
+            self._hist[user_id].pop()
+
 
 class Moderator:
     def __init__(self, cfg: ModerationConfig, llm: LLM, rules_text: str):
@@ -132,10 +136,11 @@ class Moderator:
             {"role": "user", "content": f"<user_message>{neutralize(question)}</user_message>"},
         ]
 
-    async def evaluate(self, question: str) -> Verdict:
-        pre = self.precheck(question)
-        if pre:
-            return pre
+    async def evaluate(self, question: str, prechecked: bool = False) -> Verdict:
+        if not prechecked:
+            pre = self.precheck(question)
+            if pre:
+                return pre
         try:
             data = await self.llm.chat_json(self._messages(question), MOD_SCHEMA, max_tokens=300, temperature=0.0)
         except LLMError as e:

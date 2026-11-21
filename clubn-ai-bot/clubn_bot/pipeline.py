@@ -59,14 +59,35 @@ class Pipeline:
         with self.audit_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    async def handle(self, user_id: int, question: str) -> Result:
+    def admit(self, user_id: int, question: str) -> Result | None:
+        """Instant checks, run before a question may wait for the CPU. Returns a Result if rejected."""
+        lang = guess_lang(question)
+        pre = self.moderator.precheck(question)
+        if pre:
+            res = Result("refused", private_text=f"{REFUSAL[lang]} ({pre.reason})",
+                         category=pre.category, reason=pre.reason)
+            self._audit(user_id, question, res, time.time())
+            return res
+        return None
+
+    def charge(self, user_id: int) -> Result | None:
+        """Count the question against the user's cooldown and daily limit."""
+        limited = self.moderator.limiter.check(user_id)
+        return Result("rate_limited", private_text=limited) if limited else None
+
+    def refund(self, user_id: int) -> None:
+        self.moderator.limiter.refund(user_id)
+
+    async def handle(self, user_id: int, question: str, admitted: bool = False) -> Result:
+        """Full pipeline. Pass admitted=True when admit() and charge() already ran."""
         started = time.time()
         lang = guess_lang(question)
-        limited = self.moderator.limiter.check(user_id)
-        if limited:
-            return Result("rate_limited", private_text=limited)
+        if not admitted:
+            rejected = self.admit(user_id, question) or self.charge(user_id)
+            if rejected:
+                return rejected
 
-        verdict = await self.moderator.evaluate(question)
+        verdict = await self.moderator.evaluate(question, prechecked=True)
         if not verdict.allowed:
             res = Result(
                 "refused",

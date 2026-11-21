@@ -21,7 +21,16 @@ fi
 
 mkdir -p "${APP_HOME}" "${APP_HOME}/home" "${APP_HOME}/models" "${APP_HOME}/logs"
 work="$(mktemp -d "${APP_HOME}/.update.XXXXXX")"
-trap 'rm -rf "${work}"' EXIT
+temp_ollama=""
+cleanup() {
+  # Runs on success and on any failure, so a temporary Ollama never outlives the update.
+  if [[ -n "${temp_ollama}" ]]; then
+    kill -TERM "${temp_ollama}" 2>/dev/null || true
+    wait "${temp_ollama}" 2>/dev/null || true
+  fi
+  rm -rf "${work}"
+}
+trap cleanup EXIT
 
 echo "Downloading bot code from github.com/${REPO} at ${REF}"
 curl -fsSL --proto '=https' --tlsv1.2 "https://codeload.github.com/${REPO}/tar.gz/${REF}" \
@@ -54,7 +63,6 @@ done
 
 # Download or refresh the model. Start a temporary Ollama if the instance isn't running.
 export OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS="${APP_HOME}/models"
-temp_ollama=""
 if ! curl -fs "http://${OLLAMA_HOST}/api/version" >/dev/null 2>&1; then
   env -u CLUBN_DISCORD_TOKEN /usr/bin/ollama serve >/dev/null 2>&1 &
   temp_ollama=$!
@@ -65,9 +73,5 @@ if ! curl -fs "http://${OLLAMA_HOST}/api/version" >/dev/null 2>&1; then
 fi
 echo "Ollama $(/usr/bin/ollama --version 2>/dev/null | tail -n 1)"
 (cd "${APP}" && env -u CLUBN_DISCORD_TOKEN "${VENV}/bin/python" -m clubn_bot pull)
-if [[ -n "${temp_ollama}" ]]; then
-  kill -TERM "${temp_ollama}" 2>/dev/null || true
-  wait "${temp_ollama}" 2>/dev/null || true
-fi
 
 echo "Update complete: bot code from ${REPO}@${REF}, model ${CLUBN_MODEL:-default}. Start the instance."

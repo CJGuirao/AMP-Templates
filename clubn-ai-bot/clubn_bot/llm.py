@@ -70,6 +70,41 @@ def extract_json(text: str) -> dict:
     raise LLMError("Model reply contained no valid JSON object")
 
 
+_TYPES = {
+    "object": dict,
+    "array": list,
+    "string": str,
+    "boolean": bool,
+    "integer": int,
+    "number": (int, float),
+}
+
+
+def validate(value, schema: dict, path: str = "$") -> None:
+    """Minimal JSON-schema check for the schemas this bot uses (type, required, properties, items, enum,
+    maxItems). Raises LLMError so a malformed verdict takes the same refusal path as no verdict."""
+    t = schema.get("type")
+    if t:
+        py = _TYPES[t]
+        ok = isinstance(value, py) and not (t in ("integer", "number") and isinstance(value, bool))
+        if not ok:
+            raise LLMError(f"{path}: expected {t}")
+    if "enum" in schema and value not in schema["enum"]:
+        raise LLMError(f"{path}: value not allowed")
+    if t == "object":
+        for key in schema.get("required", []):
+            if key not in value:
+                raise LLMError(f"{path}: missing {key}")
+        for key, sub in schema.get("properties", {}).items():
+            if key in value:
+                validate(value[key], sub, f"{path}.{key}")
+    if t == "array":
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            raise LLMError(f"{path}: too many items")
+        for i, item in enumerate(value):
+            validate(item, schema.get("items", {}), f"{path}[{i}]")
+
+
 class LLM:
     def __init__(self, cfg: LLMConfig):
         self.cfg = cfg
@@ -173,4 +208,6 @@ class LLM:
         return strip_think(data["choices"][0]["message"].get("content") or "")
 
     async def chat_json(self, messages: list[dict], schema: dict, **kw) -> dict:
-        return extract_json(await self.chat(messages, schema=schema, **kw))
+        data = extract_json(await self.chat(messages, schema=schema, **kw))
+        validate(data, schema)
+        return data

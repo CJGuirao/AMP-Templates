@@ -105,7 +105,12 @@ def format_sources(sources: list[Source], used: list[int]) -> str:
     return "\n".join(lines)
 
 
-async def answer_question(llm: LLM, question: str, sources: list[Source]) -> Answer:
+# Room left in a 2000-character Discord message for the "<name> preguntó: <question>" header.
+HEADER_RESERVE = 400
+
+
+async def answer_question(llm: LLM, question: str, sources: list[Source],
+                          max_chars: int = DISCORD_LIMIT - HEADER_RESERVE) -> Answer:
     lang = guess_lang(question)
     if not sources:
         return Answer(False, NO_SOURCES[lang], [])
@@ -123,8 +128,15 @@ async def answer_question(llm: LLM, question: str, sources: list[Source]) -> Ans
     if not used:  # an answer without any valid citation is treated as speculation
         return Answer(False, NO_SOURCES[lang], [])
 
-    footer = ("Fuentes:" if lang == "es" else "Sources:") + "\n" + format_sources(sources, used)
-    room = DISCORD_LIMIT - len(footer) - 120
+    label = "Fuentes:" if lang == "es" else "Sources:"
+    # The footer can only shrink when the body is cut, so budget with the full footer first,
+    # then re-check citations on what is left and rebuild the footer from the survivors.
+    room = max_chars - len(label) - 2 - len(format_sources(sources, used)) - 2
     if len(body) > room:
-        body = body[:room].rsplit(" ", 1)[0] + " …"
-    return Answer(True, f"{body}\n\n{footer}", [sources[i - 1] for i in used])
+        body = body[:max(room, 0)].rsplit(" ", 1)[0].rstrip()
+        body = re.sub(r"\[\d*$", "", body).rstrip() + " …"  # don't leave half a citation
+        body, used = verify_citations(body, len(sources))
+        if not used:
+            return Answer(False, NO_SOURCES[lang], [])
+    text = f"{body}\n\n{label}\n{format_sources(sources, used)}"
+    return Answer(True, text, [sources[i - 1] for i in used])

@@ -118,25 +118,38 @@ class LocalKB:
 # ---------- SSRF-safe fetching ----------
 
 
-def is_public_host(host: str) -> bool:
+def resolve_public_ip(host: str) -> str | None:
+    """Resolve host and return one address, only if EVERY address it resolves to is public."""
     try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return False
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError, ValueError):
+        return None
+    if not infos:
+        return None
     for info in infos:
         ip = ipaddress.ip_address(info[4][0].split("%")[0])
         if not ip.is_global or ip.is_multicast:
-            return False
-    return bool(infos)
+            return None
+    return infos[0][4][0]
+
+
+def is_public_host(host: str) -> bool:
+    return resolve_public_ip(host) is not None
 
 
 def url_allowed(url: str, blocked_domains: list[str]) -> bool:
-    u = urlparse(url)
-    if u.scheme not in ("http", "https") or not u.hostname:
+    try:
+        u = urlparse(url)
+        port = u.port
+        hostname = u.hostname
+    except ValueError:  # malformed port or IPv6 authority
         return False
-    if u.port not in (None, 80, 443):
+    if u.scheme not in ("http", "https") or not hostname:
         return False
-    host = u.hostname.lower()
+    if port not in (None, 80, 443):
+        return False
+    u = u._replace(netloc=hostname)
+    host = hostname.lower()
     if any(host == d or host.endswith("." + d) for d in blocked_domains):
         return False
     return True
@@ -149,6 +162,7 @@ class Retriever:
         self._client = httpx.AsyncClient(
             timeout=15.0,
             follow_redirects=False,
+            trust_env=False,
             headers={"User-Agent": cfg.user_agent},
         )
 
@@ -159,11 +173,20 @@ class Retriever:
         for _ in range(4):  # follow at most 3 redirects, re-checking each hop
             if not url_allowed(url, self.cfg.blocked_domains):
                 return None
-            host = urlparse(url).hostname
-            if not await asyncio.to_thread(is_public_host, host):
+            u = urlparse(url)
+            host = u.hostname
+            ip = await asyncio.to_thread(resolve_public_ip, host)
+            if not ip:
                 return None
+            # Connect to the address we just validated (no second DNS lookup, so no DNS rebinding),
+            # while keeping the real Host header and TLS server name for certificate checks.
+            ip_host = f"[{ip}]" if ":" in ip else ip
+            pinned = u._replace(netloc=ip_host + (f":{u.port}" if u.port else "")).geturl()
+            host_hdr = f"[{host}]" if ":" in host else host
+            headers = {"Host": host_hdr + (f":{u.port}" if u.port else "")}
             try:
-                async with self._client.stream("GET", url) as r:
+                async with self._client.stream("GET", pinned, headers=headers,
+                                               extensions={"sni_hostname": host}) as r:
                     if r.is_redirect:
                         url = urljoin(url, r.headers.get("location", ""))
                         continue
@@ -269,7 +292,7 @@ class Retriever:
                 web.append(Source(h["title"] or h["url"], h["url"], text, "web"))
 
         for s in wiki:
-            if s.url not in seen:
+            if s.url not in seen and url_allowed(s.url, cfg.blocked_domains):
                 seen.add(s.url)
                 sources.append(s)
         sources += web

@@ -6,10 +6,10 @@ import pytest
 
 from clubn_bot.answer import answer_question, sanitize_for_discord, verify_citations
 from clubn_bot.config import load_config, load_discord_token
-from clubn_bot.llm import LLM, LLMError, assert_loopback, extract_json, strip_think
+from clubn_bot.llm import LLM, LLMError, assert_loopback, extract_json, strip_think, validate
 from clubn_bot.moderation import Moderator, RateLimiter, neutralize
 from clubn_bot.pipeline import Pipeline
-from clubn_bot.retrieval import LocalKB, Source, url_allowed, is_public_host
+from clubn_bot.retrieval import LocalKB, Retriever, Source, url_allowed, is_public_host
 
 
 class FakeLLM:
@@ -26,8 +26,10 @@ class FakeLLM:
             raise r
         return r if isinstance(r, str) else json.dumps(r)
 
-    async def chat_json(self, messages, schema, **kw):
-        return extract_json(await self.chat(messages, schema=schema, **kw))
+    async def chat_json(self, messages, schema, **kw):  # same contract as LLM.chat_json
+        data = extract_json(await self.chat(messages, schema=schema, **kw))
+        validate(data, schema)
+        return data
 
     async def aclose(self):
         pass
@@ -275,3 +277,116 @@ def test_pipeline_refused_never_searches(tmp_path):
     p = make_pipeline(tmp_path, llm, SRC)
     res = asyncio.run(p.handle(1, "pregunta ofensiva"))
     assert res.status == "refused" and p.retriever.queries is None
+
+
+# ---------- review fixes ----------
+
+def test_incomplete_verdicts_are_refused():
+    # missing fields must not pass the input check...
+    m = mod({"allowed": True, "category": "ok"})
+    assert not asyncio.run(m.evaluate("pregunta normal")).allowed
+    # ...a JSON array is not a verdict...
+    m = mod("[]")
+    assert not asyncio.run(m.evaluate("pregunta normal")).allowed
+    # ...and the output check needs both fields too
+    m = mod({"allowed": True})
+    assert asyncio.run(m.check_answer("q", "a")) is False
+
+
+def test_validate_types():
+    from clubn_bot.answer import ANSWER_SCHEMA
+    validate({"answerable": True, "answer": "x", "sources_used": [1]}, ANSWER_SCHEMA)
+    with pytest.raises(LLMError):
+        validate({"answerable": "yes", "answer": "x", "sources_used": [1]}, ANSWER_SCHEMA)
+    with pytest.raises(LLMError):
+        validate({"answerable": True, "answer": "x", "sources_used": [True]}, ANSWER_SCHEMA)
+
+
+def test_malformed_urls_are_rejected_not_raised():
+    assert not url_allowed("https://example.com:not-a-port/", [])
+    assert not url_allowed("http://[::1/", [])
+
+
+def test_truncation_keeps_a_valid_citation_or_refuses():
+    long_text = "palabra " * 400
+    # citation only at the very end gets cut off -> refuse rather than post uncited text
+    llm = FakeLLM({"answerable": True, "answer": long_text + "[1].", "sources_used": [1]})
+    a = asyncio.run(answer_question(llm, "¿Cuándo se fundó el Real Madrid?", SRC))
+    assert not a.ok
+    # citation near the start survives, the cut text fits, and the footer is intact
+    llm = FakeLLM({"answerable": True, "answer": "Dato [1]. " + long_text + "[2].", "sources_used": [1, 2]})
+    a = asyncio.run(answer_question(llm, "¿Cuándo se fundó el Real Madrid?", SRC))
+    assert a.ok and len(a.text) <= 1600
+    assert a.text.rstrip().endswith("<https://es.wikipedia.org/wiki/Real_Madrid>")
+    assert "[2]" not in a.text  # its citation was cut, so it left the footer too
+
+
+def test_public_message_fits_discord_limit():
+    from types import SimpleNamespace
+    from clubn_bot.bot import ClubNBot
+    from clubn_bot.pipeline import Result
+    user = SimpleNamespace(display_name="*_~" * 20)
+    res = Result("answered", public_text="x" * 1590 + "\nFuentes:\n[1] T <https://e.com/a>")
+    text = ClubNBot._public(None, user, "_*" * 300, res)
+    assert len(text) <= 2000 and text.endswith("<https://e.com/a>")
+
+
+class SlowPipeline:
+    def __init__(self):
+        self.gate = asyncio.Event()
+        self.charged = []
+
+    def admit(self, user_id, question):
+        from clubn_bot.pipeline import Result
+        return Result("refused", private_text="no") if "bad" in question else None
+
+    def charge(self, user_id):
+        from clubn_bot.pipeline import Result
+        if user_id in self.charged:
+            return Result("rate_limited", private_text="wait")
+        self.charged.append(user_id)
+        return None
+
+    def refund(self, user_id):
+        self.charged.remove(user_id)
+
+    async def handle(self, user_id, question, admitted=False):
+        from clubn_bot.pipeline import Result
+        await self.gate.wait()
+        return Result("answered", public_text="ok")
+
+
+def test_worker_queue_semantics():
+    from clubn_bot.bot import Busy, Worker
+
+    async def scenario():
+        # queue size 0 still answers when the CPU is idle
+        p = SlowPipeline(); p.gate.set()
+        assert (await Worker(p, 0).run(1, "q")).status == "answered"
+
+        # queue size 2: one running + two waiting, the next one is busy
+        p = SlowPipeline(); w = Worker(p, 2)
+        tasks = [asyncio.create_task(w.run(u, "q")) for u in (1, 2, 3)]
+        await asyncio.sleep(0)
+        with pytest.raises(Busy):
+            await w.run(4, "q")
+        # rejected and rate-limited questions never take a place in the line
+        assert (await w.run(5, "bad q")).status == "refused"
+        assert (await w.run(1, "q again")).status == "rate_limited"
+        assert 4 not in p.charged  # a busy answer doesn't cost the member their cooldown
+        p.gate.set()
+        assert [ (await t).status for t in tasks ] == ["answered"] * 3
+
+    asyncio.run(scenario())
+
+
+def test_wikipedia_respects_blocklist(tmp_path):
+    cfg = load_config({"CLUBN_BLOCKED_DOMAINS": "wikipedia.org", "CLUBN_WEB_SEARCH": "none"})
+    r = Retriever(cfg.search, tmp_path)
+
+    async def fake_wiki(query, lang):
+        return [Source("Wikipedia (es): X", "https://es.wikipedia.org/wiki/X", "texto " * 20, "wikipedia")]
+
+    r.wikipedia = fake_wiki
+    assert asyncio.run(r.gather("pregunta", ["x"])) == []
+    asyncio.run(r.aclose())

@@ -32,11 +32,15 @@ async def _ask(cfg, question: str):
 
 
 async def _pull(cfg):
-    from .llm import LLM
+    import httpx
+
+    from .llm import LLM, LLMError
 
     llm = LLM(cfg.llm)
     try:
         await llm.ensure_model(_say)
+    except (LLMError, httpx.HTTPError) as e:
+        raise SystemExit(f"Model download failed for {cfg.llm.model} at {cfg.llm.base_url}: {e or type(e).__name__}")
     finally:
         await llm.aclose()
 

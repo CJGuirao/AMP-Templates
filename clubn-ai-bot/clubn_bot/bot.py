@@ -19,23 +19,40 @@ class Busy(Exception):
 
 
 class Worker:
-    """One question at a time on the CPU; a short waiting line, then 'busy'."""
+    """One question at a time on the CPU, plus a short waiting line.
+
+    Instant checks (rules prechecks, cooldown, daily limit) run before a question joins the line,
+    so one member can't fill it with questions that would be rejected anyway.
+    """
 
     def __init__(self, pipeline: Pipeline, queue_size: int):
         self.pipeline = pipeline
         self._sem = asyncio.Semaphore(1)
-        self._waiting = 0
+        self._running = False
+        self._waiting = 0  # questions waiting for the CPU, not counting the one running
         self._max = queue_size
 
     async def run(self, user_id: int, question: str) -> Result:
-        if self._waiting >= self._max:
+        rejected = self.pipeline.admit(user_id, question)
+        if rejected:
+            return rejected
+        rejected = self.pipeline.charge(user_id)
+        if rejected:
+            return rejected
+        if self._running and self._waiting >= self._max:
+            self.pipeline.refund(user_id)  # "busy" shouldn't cost the member their cooldown
             raise Busy()
         self._waiting += 1
         try:
-            async with self._sem:
-                return await self.pipeline.handle(user_id, question)
+            await self._sem.acquire()
         finally:
-            self._waiting -= 1
+            self._waiting -= 1  # left the line, whether we got the CPU or were cancelled
+        self._running = True
+        try:
+            return await self.pipeline.handle(user_id, question, admitted=True)
+        finally:
+            self._running = False
+            self._sem.release()
 
 
 class ClubNBot(discord.Client):
@@ -76,8 +93,15 @@ class ClubNBot(discord.Client):
             )
 
     def _public(self, user, question: str, res: Result) -> str:
+        """'<name> preguntó: <question>' + answer, shortening only the quoted question to fit 2000."""
+        name = discord.utils.escape_markdown(user.display_name[:32])
         q = question.replace("\n", " ")[:300]
-        return f"**{user.display_name} preguntó:** {discord.utils.escape_markdown(q)}\n\n{res.public_text}"[:2000]
+        while True:
+            text = f"**{name} preguntó:** {discord.utils.escape_markdown(q)}\n\n{res.public_text}"
+            if len(text) <= 2000 or not q:
+                return text[:2000] if not q else text
+            q = q[: max(0, len(q) - (len(text) - 2000) - 1)].rstrip()
+            q = (q + "…") if q else ""
 
     # ----- slash command -----
     def _register_command(self):
