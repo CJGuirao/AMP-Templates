@@ -66,8 +66,10 @@ the next question, which adds a few seconds to that answer.
    **Server (Guild) ID**, and preferably **Allowed Channel IDs** and **Moderation Log Channel ID**.
 6. Press **Update**. It downloads this folder from GitHub, installs it into
    `/AMP/clubn-ai-bot/venv`, and downloads the model (about 1 GB).
-7. Replace `rules.md` in the instance folder with the real ClubÑ rules (AMP File Manager), and add
-   FAQ files to `knowledge/`.
+7. The first Update copies the Club Ñ rules (`rules.md`, a moderation summary of the official
+   rules with minor protection first) and the knowledge files (full official rules, support and
+   contact, roles, category guide) into the instance folder. Edit them in AMP's File Manager; later
+   updates never overwrite your edits.
 8. **Start.** The instance turns "Ready" when the console prints `ClubN bot ready`.
 
 To update the bot later, press Update and restart. "Bot Source Version" can pin a tag or commit.
