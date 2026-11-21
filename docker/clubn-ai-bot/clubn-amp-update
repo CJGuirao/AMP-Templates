@@ -48,7 +48,9 @@ fi
 # First install only: copy the editable starting files. Existing ones are never overwritten.
 [[ -f "${APP_HOME}/rules.md" ]] || cp "${APP}/defaults/rules.md" "${APP_HOME}/rules.md"
 mkdir -p "${APP_HOME}/knowledge"
-cp -rn "${APP}/defaults/knowledge/." "${APP_HOME}/knowledge/"
+for f in "${APP}/defaults/knowledge/"*; do
+  [[ -e "${APP_HOME}/knowledge/$(basename "${f}")" ]] || cp -r "${f}" "${APP_HOME}/knowledge/"
+done
 
 # Download or refresh the model. Start a temporary Ollama if the instance isn't running.
 export OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS="${APP_HOME}/models"

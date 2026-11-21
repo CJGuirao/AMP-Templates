@@ -26,7 +26,8 @@ CATEGORIES = [
 
 # Phrases that try to take over the bot. Matched case-insensitively, accents ignored.
 INJECTION_PATTERNS = [
-    r"ignor\w*\s+(all\s+|todas?\s+|the\s+|las?\s+)?(previous|prior|above|anteriores|previas)",
+    r"(ignor|disregard|olvid|salt)\w*\s+(\w+\s+){0,4}(previous|prior|above|earlier|anteriores|previas|de\s+arriba)",
+    r"(instructions|instrucciones|rules|reglas|normas)\s+(previous|prior|anteriores|previas|del\s+sistema)",
     r"(forget|olvida)\w*\s+(your|tus)\s+(instructions|rules|instrucciones|reglas)",
     r"(system|sistema)\s*prompt",
     r"\bjailbreak\b",

@@ -28,7 +28,8 @@ export OLLAMA_NUM_PARALLEL=1
 export OLLAMA_MAX_LOADED_MODELS=1
 export OLLAMA_MAX_QUEUE=16
 
-env -u CLUBN_DISCORD_TOKEN /usr/bin/ollama serve 2>&1 | sed -u 's/^/[ollama] /' &
+# Process substitution keeps $! pointing at Ollama itself (not at the log prefixer).
+env -u CLUBN_DISCORD_TOKEN /usr/bin/ollama serve > >(sed -u 's/^/[ollama] /') 2>&1 &
 ollama_pid=$!
 
 cd "${APP}"
@@ -37,10 +38,12 @@ bot_pid=$!
 
 stop_all() {
   echo "Stopping ClubÑ AI Bot and Ollama."
-  kill -TERM "${bot_pid}" 2>/dev/null || true
-  pkill -TERM -f '^/usr/bin/ollama serve' 2>/dev/null || true
-  wait "${bot_pid}" 2>/dev/null || true
-  wait "${ollama_pid}" 2>/dev/null || true
+  kill -TERM "${bot_pid}" "${ollama_pid}" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    kill -0 "${bot_pid}" 2>/dev/null || kill -0 "${ollama_pid}" 2>/dev/null || return 0
+    sleep 1
+  done
+  kill -KILL "${bot_pid}" "${ollama_pid}" 2>/dev/null || true
 }
 trap 'stop_all; exit 0' TERM INT
 
