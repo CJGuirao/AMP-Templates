@@ -36,7 +36,9 @@ class Source:
 _STOP = set(
     "el la los las un una unos unas de del al y o u en por para con sin que como cual cuál cuando donde "
     "es son ser fue era se lo le les mi tu su sus nos qué quien quién the a an of and or in on for to is are "
-    "was were be what which who how when where why does do did it this that with from".split()
+    "was were be what which who how when where why does do did it this that with from mis tus nos hay "
+    "este esta esto estos estas puedo puede pueden algun alguna alguno hacer tiene tienen muy mas más "
+    "can you your have has there any".split()
 )
 
 
@@ -46,7 +48,8 @@ def _norm(s: str) -> str:
 
 
 def tokens(s: str) -> list[str]:
-    return [t for t in re.findall(r"[a-z0-9ñ]+", _norm(s)) if len(t) > 2 and t not in _STOP]
+    # Crude Spanish/English stemming: keep the first 5 letters, so publico/publicar/publican match.
+    return [t[:5] for t in re.findall(r"[a-z0-9ñ]+", _norm(s)) if len(t) > 2 and t not in _STOP]
 
 
 def clip(text: str, n: int) -> str:
@@ -95,7 +98,7 @@ class LocalKB:
         if "".join(buf).strip():
             self.chunks.append(Source(title, f"local:{f.name}", "\n".join(buf).strip(), "local"))
 
-    def search(self, query: str, k: int = 3, min_score: float = 0.5, min_match: float = 0.34) -> list[Source]:
+    def search(self, query: str, k: int = 3, min_score: float = 0.5, min_match: float = 0.3) -> list[Source]:
         q = list(dict.fromkeys(tokens(query)))
         if not q or not self.chunks:
             return []
