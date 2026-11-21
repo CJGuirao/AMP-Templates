@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Run by AMP's Update action. Downloads the bot code from GitHub, installs its
+# dependencies into a persistent virtualenv and downloads the configured model.
+# Everything lives in /AMP/clubn-ai-bot, which AMP's File Manager can see.
+set -euo pipefail
+
+APP_HOME="${CLUBN_DATA_DIR:-/AMP/clubn-ai-bot}"
+REPO="${CLUBN_SOURCE_REPO:-CJGuirao/AMP-Templates}"
+REF="${CLUBN_SOURCE_REF:-main}"
+VENV="${APP_HOME}/venv"
+APP="${APP_HOME}/app"
+
+if [[ ! "${REPO}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "Invalid Bot Source Repository '${REPO}'. Use owner/repo." >&2
+  exit 2
+fi
+if [[ ! "${REF}" =~ ^[A-Za-z0-9._/-]+$ || "${REF}" == *..* ]]; then
+  echo "Invalid Bot Source Version '${REF}'. Use a branch, tag or commit." >&2
+  exit 2
+fi
+
+mkdir -p "${APP_HOME}" "${APP_HOME}/home" "${APP_HOME}/models" "${APP_HOME}/logs"
+work="$(mktemp -d "${APP_HOME}/.update.XXXXXX")"
+trap 'rm -rf "${work}"' EXIT
+
+echo "Downloading bot code from github.com/${REPO} at ${REF}"
+curl -fsSL --proto '=https' --tlsv1.2 "https://codeload.github.com/${REPO}/tar.gz/${REF}" \
+  | tar -xz -C "${work}"
+src="$(find "${work}" -mindepth 2 -maxdepth 2 -type d -name clubn-ai-bot | head -n 1)"
+if [[ -z "${src}" || ! -f "${src}/clubn_bot/__main__.py" ]]; then
+  echo "The download does not contain clubn-ai-bot/clubn_bot. Check the repository and version settings." >&2
+  exit 2
+fi
+
+rm -rf "${APP}.new" "${APP}.old"
+cp -r "${src}" "${APP}.new"
+[[ -d "${APP}" ]] && mv "${APP}" "${APP}.old"
+mv "${APP}.new" "${APP}"
+rm -rf "${APP}.old"
+
+if [[ ! -x "${VENV}/bin/python" ]]; then
+  echo "Creating persistent virtual environment at ${VENV}"
+  python3 -m venv "${VENV}"
+fi
+"${VENV}/bin/python" -m pip install --quiet --upgrade pip
+"${VENV}/bin/python" -m pip install --upgrade -r "${APP}/requirements.txt"
+
+# First install only: copy the editable starting files. Existing ones are never overwritten.
+[[ -f "${APP_HOME}/rules.md" ]] || cp "${APP}/defaults/rules.md" "${APP_HOME}/rules.md"
+mkdir -p "${APP_HOME}/knowledge"
+cp -rn "${APP}/defaults/knowledge/." "${APP_HOME}/knowledge/"
+
+# Download or refresh the model. Start a temporary Ollama if the instance isn't running.
+export OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS="${APP_HOME}/models"
+temp_ollama=""
+if ! curl -fs "http://${OLLAMA_HOST}/api/version" >/dev/null 2>&1; then
+  env -u CLUBN_DISCORD_TOKEN /usr/bin/ollama serve >/dev/null 2>&1 &
+  temp_ollama=$!
+  for _ in $(seq 1 30); do
+    curl -fs "http://${OLLAMA_HOST}/api/version" >/dev/null 2>&1 && break
+    sleep 1
+  done
+fi
+echo "Ollama $(/usr/bin/ollama --version 2>/dev/null | tail -n 1)"
+(cd "${APP}" && env -u CLUBN_DISCORD_TOKEN "${VENV}/bin/python" -m clubn_bot pull)
+if [[ -n "${temp_ollama}" ]]; then
+  kill -TERM "${temp_ollama}" 2>/dev/null || true
+  wait "${temp_ollama}" 2>/dev/null || true
+fi
+
+echo "Update complete: bot code from ${REPO}@${REF}, model ${CLUBN_MODEL:-default}. Start the instance."

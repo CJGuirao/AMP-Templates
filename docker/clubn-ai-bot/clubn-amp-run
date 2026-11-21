@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Run on every AMP instance start. Starts a private Ollama (loopback only, no token in its
+# environment) and the Discord bot. If either one exits, the other is stopped and the script
+# exits, so AMP's auto-retry restarts the pair cleanly.
+set -euo pipefail
+
+APP_HOME="${CLUBN_DATA_DIR:-/AMP/clubn-ai-bot}"
+VENV="${APP_HOME}/venv"
+APP="${APP_HOME}/app"
+
+if [[ ! -x "${VENV}/bin/python" || ! -f "${APP}/clubn_bot/__main__.py" ]]; then
+  echo "ClubÑ AI Bot is not installed. Run AMP Update before starting this instance." >&2
+  exit 2
+fi
+if [[ -z "${CLUBN_DISCORD_TOKEN:-}" ]]; then
+  echo "Required AMP setting 'Discord Bot Token' is empty. Set it in the instance configuration, then start again." >&2
+  exit 2
+fi
+
+mkdir -p "${APP_HOME}/home" "${APP_HOME}/models" "${APP_HOME}/logs" "${APP_HOME}/knowledge"
+[[ -f "${APP_HOME}/rules.md" ]] || cp "${APP}/defaults/rules.md" "${APP_HOME}/rules.md"
+
+export OLLAMA_HOST=127.0.0.1:11434
+export OLLAMA_MODELS="${APP_HOME}/models"
+export OLLAMA_KEEP_ALIVE="${CLUBN_KEEP_ALIVE:-5m}"
+export OLLAMA_CONTEXT_LENGTH="${CLUBN_NUM_CTX:-8192}"
+export OLLAMA_NUM_PARALLEL=1
+export OLLAMA_MAX_LOADED_MODELS=1
+export OLLAMA_MAX_QUEUE=16
+
+env -u CLUBN_DISCORD_TOKEN /usr/bin/ollama serve 2>&1 | sed -u 's/^/[ollama] /' &
+ollama_pid=$!
+
+cd "${APP}"
+"${VENV}/bin/python" -m clubn_bot run &
+bot_pid=$!
+
+stop_all() {
+  echo "Stopping ClubÑ AI Bot and Ollama."
+  kill -TERM "${bot_pid}" 2>/dev/null || true
+  pkill -TERM -f '^/usr/bin/ollama serve' 2>/dev/null || true
+  wait "${bot_pid}" 2>/dev/null || true
+  wait "${ollama_pid}" 2>/dev/null || true
+}
+trap 'stop_all; exit 0' TERM INT
+
+code=0
+wait -n "${ollama_pid}" "${bot_pid}" || code=$?
+echo "A process exited (code ${code}); shutting down so AMP can restart the instance."
+stop_all
+exit "${code}"
