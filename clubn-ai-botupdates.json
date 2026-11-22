@@ -1,0 +1,10 @@
+[
+  {
+    "UpdateStageName": "ClubÑ AI Bot install, update and model download",
+    "UpdateSourcePlatform": "Linux",
+    "UpdateSource": "Executable",
+    "UpdateSourceData": "/usr/local/bin/clubn-amp-update",
+    "UpdateSourceArgs": "",
+    "SkipOnFailure": false
+  }
+]
