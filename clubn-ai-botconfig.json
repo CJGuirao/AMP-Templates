@@ -453,5 +453,22 @@
     "Required": false,
     "DefaultValue": "Europe/Madrid",
     "EnumValues": {}
+  },
+  {
+    "DisplayName": "Log Level",
+    "Description": "Debug also logs the raw model reply whenever it can't be used, to diagnose refusals like \"No pude evaluar la pregunta\".",
+    "Keywords": "log,debug,logging",
+    "FieldName": "LogLevel",
+    "InputType": "enum",
+    "Category": "ClubÑ AI Bot:smart_toy",
+    "Subcategory": "Runtime:schedule:6",
+    "ParamFieldName": "LogLevel",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "INFO",
+    "EnumValues": {
+      "INFO": "Normal",
+      "DEBUG": "Debug"
+    }
   }
 ]

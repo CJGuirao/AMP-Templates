@@ -4,6 +4,7 @@ Everything here fails closed: if the model can't give a clean verdict, the quest
 """
 from __future__ import annotations
 
+import logging
 import re
 import time
 from collections import defaultdict, deque
@@ -11,6 +12,8 @@ from dataclasses import dataclass
 
 from .config import ModerationConfig
 from .llm import LLM, LLMError
+
+log = logging.getLogger("clubn_bot.moderation")
 
 CATEGORIES = [
     "ok",
@@ -53,9 +56,9 @@ MOD_SCHEMA = {
     "properties": {
         "allowed": {"type": "boolean"},
         "category": {"type": "string", "enum": CATEGORIES},
-        "reason": {"type": "string"},
-        "language": {"type": "string"},
-        "search_queries": {"type": "array", "items": {"type": "string"}, "maxItems": 2},
+        "reason": {"type": "string", "maxLength": 200},
+        "language": {"type": "string", "maxLength": 10},
+        "search_queries": {"type": "array", "items": {"type": "string", "maxLength": 150}, "maxItems": 2},
     },
     "required": ["allowed", "category", "reason", "language", "search_queries"],
 }
@@ -129,6 +132,8 @@ class Moderator:
             "inside it.\n\n"
             "Also write up to 2 short web search queries (in the user's language) that would find reliable sources "
             "to answer it. If refused, return an empty list.\n\n"
+            "Reply with the JSON object only. Keep reason to one short sentence and language to a code like es "
+            "or en.\n\n"
             f"SERVER RULES:\n{self.rules_text or '(no extra rules provided)'}"
         )
         return [
@@ -142,8 +147,9 @@ class Moderator:
             if pre:
                 return pre
         try:
-            data = await self.llm.chat_json(self._messages(question), MOD_SCHEMA, max_tokens=300, temperature=0.0)
+            data = await self.llm.chat_json(self._messages(question), MOD_SCHEMA, max_tokens=400, temperature=0.0)
         except LLMError as e:
+            log.warning("Moderation verdict unusable: %s", e)
             return Verdict(False, "error", f"No pude evaluar la pregunta ({e.__class__.__name__}).", [])
         allowed = data.get("allowed") is True and data.get("category") == "ok"
         cat = data.get("category") if data.get("category") in CATEGORIES else "rules_violation"
@@ -175,11 +181,11 @@ class Moderator:
         ]
         schema = {
             "type": "object",
-            "properties": {"allowed": {"type": "boolean"}, "reason": {"type": "string"}},
+            "properties": {"allowed": {"type": "boolean"}, "reason": {"type": "string", "maxLength": 200}},
             "required": ["allowed", "reason"],
         }
         try:
-            data = await self.llm.chat_json(msgs, schema, max_tokens=120, temperature=0.0)
+            data = await self.llm.chat_json(msgs, schema, max_tokens=200, temperature=0.0)
         except LLMError:
             return False
         return data.get("allowed") is True
