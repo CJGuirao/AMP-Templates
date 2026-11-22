@@ -424,3 +424,32 @@ def test_prompt_cannot_remove_citation_requirement(tmp_path):
     assert res.status == "no_sources" and "1902" not in res.public_text
     # and the moderation prompt never includes the admin prompt
     assert "never cite" not in llm.calls[0][0]["content"]
+
+
+# ---------- moderation log ----------
+
+def test_mod_log_failure_does_not_break_the_command(caplog):
+    from types import SimpleNamespace
+    import discord
+    from clubn_bot.bot import ClubNBot
+    from clubn_bot.pipeline import Result
+
+    class NoAccessChannel:
+        async def send(self, *a, **k):
+            resp = SimpleNamespace(status=403, reason="Forbidden")
+            raise discord.Forbidden(resp, {"code": 50001, "message": "Missing Access"})
+
+    cfg = load_config({"CLUBN_MOD_LOG_CHANNEL_ID": "789"})
+    fake = SimpleNamespace(cfg=cfg, get_channel=lambda cid: NoAccessChannel())
+    user = SimpleNamespace(mention="<@1>")
+    res = Result("refused", category="spam", reason="r")
+    with caplog.at_level("WARNING"):
+        asyncio.run(ClubNBot._mod_log(fake, user, "pregunta", res))  # must not raise
+    assert "Could not write to moderation log channel 789" in caplog.text
+
+    caplog.clear()
+    fake = SimpleNamespace(cfg=cfg, get_channel=lambda cid: None)
+    with caplog.at_level("WARNING"):
+        asyncio.run(ClubNBot._mod_log(fake, user, "pregunta", res))
+        ClubNBot._check_mod_log_channel(fake)
+    assert caplog.text.count("789") == 2
