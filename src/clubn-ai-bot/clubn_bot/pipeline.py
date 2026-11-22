@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,6 +17,31 @@ REFUSAL = {
     "es": "No puedo responder a esto en el servidor.",
     "en": "I can't answer this on the server.",
 }
+
+GREETING = {
+    "es": "¡Hola! Soy el bot de preguntas de ClubÑ. Pregúntame lo que quieras sobre el club, streaming, "
+          "videojuegos o cultura general y te responderé citando mis fuentes.",
+    "en": "Hi! I'm ClubÑ's question bot. Ask me anything about the club, streaming, games or general "
+          "knowledge and I'll answer with sources.",
+}
+_GREETING_WORDS = {"hola", "holi", "holaa", "ola", "buenas", "buenos", "dias", "tardes", "noches", "saludos",
+                   "hello", "hi", "hey", "hiya", "good", "morning", "afternoon", "evening", "di", "dime", "say",
+                   "que", "tal", "como", "estas", "how", "are", "you", "bot", "a", "todos", "all", "everyone"}
+_GREETING_CORE = {"hola", "holi", "holaa", "ola", "buenas", "buenos", "saludos", "hello", "hi", "hey", "hiya",
+                  "good"}
+_ACCENTS = str.maketrans("áéíóúüñ", "aeiouun")
+
+
+def is_greeting(text: str, bot_name: str = "") -> bool:
+    """A short hello with nothing else in it. These skip the model entirely: no rules to check, no sources."""
+    words = re.findall(r"[a-z]+", text.lower().translate(_ACCENTS))
+    extra = {bot_name.lower().translate(_ACCENTS)} if bot_name else set()
+    return 0 < len(words) <= 6 and bool(set(words) & _GREETING_CORE) and set(words) <= _GREETING_WORDS | extra
+
+
+def greeting_lang(text: str) -> str:
+    words = set(re.findall(r"[a-z]+", text.lower()))
+    return "en" if words & {"hello", "hi", "hey", "hiya", "good", "say", "how"} else "es"
 
 
 @dataclass
@@ -62,6 +88,8 @@ class Pipeline:
     def admit(self, user_id: int, question: str) -> Result | None:
         """Instant checks, run before a question may wait for the CPU. Returns a Result if rejected."""
         lang = guess_lang(question)
+        if is_greeting(question, self.cfg.discord.command_name):
+            return None
         pre = self.moderator.precheck(question)
         if pre:
             res = Result("refused", private_text=f"{REFUSAL[lang]} ({pre.reason})",
@@ -86,6 +114,11 @@ class Pipeline:
             rejected = self.admit(user_id, question) or self.charge(user_id)
             if rejected:
                 return rejected
+
+        if is_greeting(question, self.cfg.discord.command_name):
+            res = Result("answered", public_text=GREETING[greeting_lang(question)], category="greeting")
+            self._audit(user_id, question, res, started)
+            return res
 
         verdict = await self.moderator.evaluate(question, prechecked=True)
         if not verdict.allowed:

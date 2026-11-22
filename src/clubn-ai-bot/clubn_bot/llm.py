@@ -170,6 +170,9 @@ class LLM:
 
     async def _chat(self, messages, schema, max_tokens, temperature) -> tuple[str, bool]:
         c = self.cfg
+        # A repetition penalty punishes the quotes, commas and braces that JSON repeats on every field, which
+        # pushes a small model to keep writing inside a string instead of closing it. Off for JSON replies.
+        repeat_penalty = 1.0 if schema else 1.05
         if c.backend == "ollama":
             body = {
                 "model": c.model,
@@ -179,7 +182,7 @@ class LLM:
                 "options": {
                     "temperature": temperature,
                     "top_k": 50,
-                    "repeat_penalty": 1.1,
+                    "repeat_penalty": repeat_penalty,
                     "num_ctx": c.num_ctx,
                     "num_predict": max_tokens,
                 },
@@ -198,7 +201,7 @@ class LLM:
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "top_k": 50,
-                "repeat_penalty": 1.1,
+                "repeat_penalty": repeat_penalty,
             }
             if schema:
                 body["response_format"] = {
@@ -219,14 +222,24 @@ class LLM:
             raise LLMError(f"LLM request failed: {e}") from e
 
         if c.backend == "ollama":
-            text = data.get("message", {}).get("content", "")
+            msg = data.get("message", {})
+            text = msg.get("content", "")
+            thinking = msg.get("thinking") or ""
             truncated = data.get("done_reason") == "length"
         else:
             choice = data["choices"][0]
             text = choice["message"].get("content") or ""
+            thinking = choice["message"].get("reasoning_content") or ""
             truncated = choice.get("finish_reason") == "length"
+        if "<think>" in text and "</think>" not in text:
+            thinking, text = text, ""
+        if thinking:
+            if c.think is False:
+                log.warning("The model reasoned before replying (%d characters) although Reasoning Mode is Off; "
+                            "this model or Ollama version ignores the switch.", len(thinking))
+            log.debug("Model reasoning: %r", thinking[:2000])
         if truncated:
-            log.warning("Model reply hit the %d-token limit", max_tokens)
+            log.warning("Model reply hit the %d-token limit (%d characters of reply)", max_tokens, len(text))
         return strip_think(text), truncated
 
     async def chat_json(self, messages: list[dict], schema: dict, *, max_tokens: int = 512, **kw) -> dict:

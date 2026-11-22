@@ -12,10 +12,11 @@ in this repository.
 
 1. A member runs `/pregunta` (the name is configurable) in an allowed channel.
 2. **Cheap checks:** allowed channel and role, per-user cooldown and daily limit, length, `@everyone`
-   and invites, known prompt-injection phrases, and your own blocked patterns.
+   and invites, known prompt-injection phrases, and your own blocked patterns. A plain greeting
+   ("hola", "hello") gets a short fixed reply without using the model.
 3. **Rules check by the model:** LFM3 judges the question against `rules.md` plus the AMP
-   "Extra Server Rules" field and returns a fixed JSON verdict. Anything unclear, any model error or
-   any malformed reply is a refusal (fail closed). Refusals are shown only to the asker, and optionally
+   "Extra Server Rules" field and replies with a single label (`ok` or a refusal category). Anything
+   other than exactly one known label, and any model error, is a refusal (fail closed). Refusals are shown only to the asker, and optionally
    reported in a staff channel.
 4. **Retrieval:** the server's own knowledge files first, then Wikipedia (es, en), then web search
    (DuckDuckGo or your own SearXNG). The top pages are downloaded with an SSRF guard (public IPs only,
@@ -124,7 +125,7 @@ output check against the server rules. Both fields are limited to 2000 character
   `@everyone`, role and user pings are disabled on every message the bot sends.
 - **Prompt injection:** user text and web text are neutralised so they can't close the prompt's
   delimiters or forge chat-template tokens; both are labelled as untrusted data; the moderation
-  verdict and the answer are constrained to JSON schemas; known injection phrases are refused before
+  verdict must be one known label and the answer is constrained to a JSON schema; known injection phrases are refused before
   the model sees them; the answer is checked again before posting; links in the answer body are
   removed so only the cited source list carries URLs.
 - **Web fetching** only reaches public IPs on ports 80 and 443, re-checks every redirect, and caps
