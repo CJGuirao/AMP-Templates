@@ -8,7 +8,7 @@ The `cjguirao-clubn-ai-bot` Generic template runs a Discord question-answering b
 local Liquid AI LFM3-1.7B model on CPU (Ollama, loopback only, unloads when idle). It checks each
 question against the server rules and answers only from cited sources. Every setting, including the
 Discord token, is entered in the AMP instance configuration. See
-[clubn-ai-bot/README.md](clubn-ai-bot/README.md) for setup, settings and security notes.
+[src/clubn-ai-bot/README.md](src/clubn-ai-bot/README.md) for setup, settings and security notes.
 
 ## Hermes Agent (Linux Docker instance)
 

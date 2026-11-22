@@ -9,7 +9,7 @@ on:
   pull_request:
     paths:
       - docker/clubn-ai-bot/**
-      - clubn-ai-bot/**
+      - src/clubn-ai-bot/**
       - .github/workflows/publish-clubn-ai-bot-image.yml
   workflow_dispatch:
 
@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Unit tests
-        working-directory: clubn-ai-bot
+        working-directory: src/clubn-ai-bot
         run: |
           python -m pip install -r requirements.txt pytest
           python -m pytest -q tests

@@ -35,9 +35,9 @@ trap cleanup EXIT
 echo "Downloading bot code from github.com/${REPO} at ${REF}"
 curl -fsSL --proto '=https' --tlsv1.2 "https://codeload.github.com/${REPO}/tar.gz/${REF}" \
   | tar -xz -C "${work}"
-src="$(find "${work}" -mindepth 2 -maxdepth 2 -type d -name clubn-ai-bot | head -n 1)"
+src="$(find "${work}" -mindepth 3 -maxdepth 3 -type d -path "*/src/clubn-ai-bot" | head -n 1)"
 if [[ -z "${src}" || ! -f "${src}/clubn_bot/__main__.py" ]]; then
-  echo "The download does not contain clubn-ai-bot/clubn_bot. Check the repository and version settings." >&2
+  echo "The download does not contain src/clubn-ai-bot/clubn_bot. Check the repository and version settings." >&2
   exit 2
 fi
 
