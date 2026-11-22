@@ -102,6 +102,7 @@ To update the bot later, press Update and restart. "Bot Source Version" can pin 
 | Blocked Source Domains | `CLUBN_BLOCKED_DOMAINS` | blank |
 | Bot Source Repository / Version | `CLUBN_SOURCE_REPO` / `CLUBN_SOURCE_REF` | `CJGuirao/AMP-Templates` / `main` |
 | Timezone | `TZ` | `Europe/Madrid` |
+| Log Level | `CLUBN_LOG_LEVEL` | `INFO` (Debug also logs unusable raw model replies) |
 
 ## System prompt and personality
 

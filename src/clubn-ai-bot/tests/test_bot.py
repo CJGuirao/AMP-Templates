@@ -453,3 +453,65 @@ def test_mod_log_failure_does_not_break_the_command(caplog):
         asyncio.run(ClubNBot._mod_log(fake, user, "pregunta", res))
         ClubNBot._check_mod_log_channel(fake)
     assert caplog.text.count("789") == 2
+
+
+# ---------- structured replies from the model ----------
+
+def _ollama_llm(replies, seen):
+    import httpx
+    from clubn_bot.config import LLMConfig
+    from clubn_bot.llm import LLM
+
+    def handler(request):
+        body = json.loads(request.content)
+        seen.append(body)
+        content, done_reason = replies.pop(0)
+        return httpx.Response(200, json={"message": {"content": content}, "done_reason": done_reason})
+
+    llm = LLM(LLMConfig(base_url="http://127.0.0.1:11434"))
+    llm._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return llm
+
+
+def test_truncated_verdict_is_retried_with_a_bigger_budget():
+    from clubn_bot.moderation import MOD_SCHEMA
+    good = json.dumps({"allowed": True, "category": "ok", "reason": "Pregunta normal.", "language": "es",
+                       "search_queries": ["historia de Valheim"]})
+    seen = []
+    llm = _ollama_llm([('{"allowed": true, "category": "ok", "reason": "La pregunta es', "length"),
+                       (good, "stop")], seen)
+    data = asyncio.run(llm.chat_json([{"role": "user", "content": "q"}], MOD_SCHEMA, max_tokens=400))
+    assert data["allowed"] is True
+    assert [b["options"]["num_predict"] for b in seen] == [400, 800]
+    assert all(b["format"] == MOD_SCHEMA and b["think"] is False for b in seen)
+
+
+def test_still_truncated_verdict_refuses(caplog):
+    from clubn_bot.config import ModerationConfig
+    from clubn_bot.moderation import Moderator
+    cut = ('{"allowed": true, "category": "ok", "reason": "', "length")
+    llm = _ollama_llm([cut, cut], [])
+    mod = Moderator(ModerationConfig(), llm, "")
+    with caplog.at_level("WARNING"):
+        v = asyncio.run(mod.evaluate("¿Qué es Club Ñ?"))
+    assert not v.allowed and v.category == "error"
+    assert "token limit" in caplog.text
+
+
+def test_unusable_reply_is_logged_at_debug(caplog):
+    from clubn_bot.moderation import MOD_SCHEMA
+    from clubn_bot.llm import LLMError
+    llm = _ollama_llm([("no es JSON", "stop")], [])
+    with caplog.at_level("DEBUG", logger="clubn_bot.llm"):
+        with pytest.raises(LLMError):
+            asyncio.run(llm.chat_json([{"role": "user", "content": "q"}], MOD_SCHEMA))
+    assert "no es JSON" in caplog.text
+
+
+def test_verdict_inside_code_fence_is_accepted():
+    from clubn_bot.moderation import MOD_SCHEMA
+    reply = '```json\n{"allowed": false, "category": "spam_or_ads", "reason": "Publicidad.", "language": "es", ' \
+            '"search_queries": []}\n```'
+    llm = _ollama_llm([(reply, "stop")], [])
+    data = asyncio.run(llm.chat_json([{"role": "user", "content": "q"}], MOD_SCHEMA))
+    assert data["category"] == "spam_or_ads"

@@ -7,15 +7,23 @@ import re
 import socket
 from urllib.parse import urlparse
 
+import logging
+
 import httpx
 
 from .config import LLMConfig
+
+log = logging.getLogger("clubn_bot.llm")
 
 _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S)
 
 
 class LLMError(RuntimeError):
     pass
+
+
+class LLMTruncated(LLMError):
+    """The reply hit the output token limit, so any JSON in it is cut off."""
 
 
 def assert_loopback(url: str) -> None:
@@ -82,7 +90,8 @@ _TYPES = {
 
 def validate(value, schema: dict, path: str = "$") -> None:
     """Minimal JSON-schema check for the schemas this bot uses (type, required, properties, items, enum,
-    maxItems). Raises LLMError so a malformed verdict takes the same refusal path as no verdict."""
+    maxItems). maxLength only steers generation; callers cut long strings themselves. Raises LLMError
+    so a malformed verdict takes the same refusal path as no verdict."""
     t = schema.get("type")
     if t:
         py = _TYPES[t]
@@ -154,6 +163,12 @@ class LLM:
         max_tokens: int = 512,
         temperature: float = 0.1,
     ) -> str:
+        text, truncated = await self._chat(messages, schema, max_tokens, temperature)
+        if truncated and schema:
+            raise LLMTruncated(f"reply hit the {max_tokens}-token limit")
+        return text
+
+    async def _chat(self, messages, schema, max_tokens, temperature) -> tuple[str, bool]:
         c = self.cfg
         if c.backend == "ollama":
             body = {
@@ -204,10 +219,32 @@ class LLM:
             raise LLMError(f"LLM request failed: {e}") from e
 
         if c.backend == "ollama":
-            return strip_think(data.get("message", {}).get("content", ""))
-        return strip_think(data["choices"][0]["message"].get("content") or "")
+            text = data.get("message", {}).get("content", "")
+            truncated = data.get("done_reason") == "length"
+        else:
+            choice = data["choices"][0]
+            text = choice["message"].get("content") or ""
+            truncated = choice.get("finish_reason") == "length"
+        if truncated:
+            log.warning("Model reply hit the %d-token limit", max_tokens)
+        return strip_think(text), truncated
 
-    async def chat_json(self, messages: list[dict], schema: dict, **kw) -> dict:
-        data = extract_json(await self.chat(messages, schema=schema, **kw))
-        validate(data, schema)
-        return data
+    async def chat_json(self, messages: list[dict], schema: dict, *, max_tokens: int = 512, **kw) -> dict:
+        """Ask for JSON matching `schema`. A reply cut off by the token limit is retried once with twice
+        the budget; anything still unparseable or off-schema raises LLMError, which callers treat as a refusal."""
+        for attempt in (1, 2):
+            text = ""
+            try:
+                text = await self.chat(messages, schema=schema, max_tokens=max_tokens, **kw)
+                data = extract_json(text)
+                validate(data, schema)
+                return data
+            except LLMTruncated:
+                if attempt == 2:
+                    raise
+                max_tokens *= 2
+            except LLMError as e:
+                if text:
+                    log.debug("Unusable model reply (%s): %r", e, text[:2000])
+                raise
+        raise LLMError("unreachable")

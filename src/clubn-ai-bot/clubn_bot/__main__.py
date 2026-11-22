@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 
 from .config import load_config, load_discord_token
@@ -66,9 +67,11 @@ def main():
     ap.add_argument("cmd", choices=["run", "ask", "check", "pull"])
     ap.add_argument("question", nargs="?")
     a = ap.parse_args()
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+    level = os.environ.get("CLUBN_LOG_LEVEL", "INFO").strip().upper()
+    logging.basicConfig(level=logging.DEBUG if level == "DEBUG" else logging.INFO, stream=sys.stdout,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    for noisy in ("httpx", "httpcore", "discord", "asyncio"):
+        logging.getLogger(noisy).setLevel(logging.WARNING if noisy != "discord" else logging.INFO)
     cfg = load_config()
 
     if a.cmd == "ask":
