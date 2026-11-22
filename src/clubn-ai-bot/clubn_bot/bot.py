@@ -81,16 +81,39 @@ class ClubNBot(discord.Client):
         return None
 
     async def _mod_log(self, user, question: str, res: Result):
+        """Best effort: a missing or unreachable log channel never breaks the answer to the member."""
         cid = self.cfg.moderation.mod_log_channel_id
         if not cid or res.status != "refused":
             return
         ch = self.get_channel(cid)
-        if ch:
-            q = question.replace("`", "'")[:500]
+        if ch is None:
+            log.warning("Moderation log channel %s not found or not visible to the bot; refusal not logged", cid)
+            return
+        q = question.replace("`", "'")[:500]
+        try:
             await ch.send(
                 f"🚫 Pregunta rechazada de {user.mention} (`{res.category}`): {res.reason}\n> {q}",
                 allowed_mentions=NO_PINGS,
             )
+        except discord.HTTPException as e:
+            log.warning("Could not write to moderation log channel %s (%s); refusal not logged. "
+                        "Give the bot View Channel and Send Messages there.", cid, e)
+
+    def _check_mod_log_channel(self):
+        """Warn at startup if the moderation log channel is set but unusable."""
+        cid = self.cfg.moderation.mod_log_channel_id
+        if not cid:
+            return
+        ch = self.get_channel(cid)
+        if ch is None:
+            log.warning("Moderation log channel %s not found: check the ID and that the bot can see it", cid)
+            return
+        me = getattr(ch.guild, "me", None)
+        perms = ch.permissions_for(me) if me else None
+        if perms is not None and not (perms.view_channel and perms.send_messages):
+            log.warning("The bot lacks View Channel or Send Messages in moderation log channel #%s (%s)", ch.name, cid)
+        else:
+            log.info("Moderation log channel: #%s", ch.name)
 
     def _public(self, user, question: str, res: Result) -> str:
         """'<name> preguntó: <question>' + answer, shortening only the quoted question to fit 2000."""
@@ -125,9 +148,15 @@ class ClubNBot(discord.Client):
                 return
 
             if res.public_text:
-                msg = await interaction.channel.send(self._public(interaction.user, pregunta, res),
-                                                     allowed_mentions=NO_PINGS, suppress_embeds=True)
-                await interaction.followup.send(f"Respuesta publicada: {msg.jump_url}", ephemeral=True)
+                try:
+                    msg = await interaction.channel.send(self._public(interaction.user, pregunta, res),
+                                                         allowed_mentions=NO_PINGS, suppress_embeds=True)
+                except discord.HTTPException as e:
+                    log.warning("Could not post the answer in channel %s (%s)", interaction.channel_id, e)
+                    await interaction.followup.send(
+                        "No tengo permiso para publicar en este canal. Avisa a la administración.", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"Respuesta publicada: {msg.jump_url}", ephemeral=True)
             else:
                 await interaction.followup.send(res.private_text, ephemeral=True)
             await self._mod_log(interaction.user, pregunta, res)
@@ -156,6 +185,7 @@ class ClubNBot(discord.Client):
     async def on_ready(self):
         log.info("Logged in as %s (%s)", self.user, self.user.id)
         log.info("ClubN bot ready: /%s is available in %d server(s)", self.cfg.discord.command_name, len(self.guilds))
+        self._check_mod_log_channel()
 
     # ----- optional: answer when mentioned -----
     async def on_message(self, message: discord.Message):
@@ -172,14 +202,17 @@ class ClubNBot(discord.Client):
             except Busy:
                 await message.reply("Estoy ocupado, prueba en un minuto.", allowed_mentions=NO_PINGS)
                 return
-        if res.public_text:
-            await message.reply(res.public_text[:2000], allowed_mentions=NO_PINGS, suppress_embeds=True)
-        else:
-            await message.add_reaction("🚫")  # no public detail on why
-            try:
-                await message.author.send(res.private_text)
-            except discord.HTTPException:
-                pass
+        try:
+            if res.public_text:
+                await message.reply(res.public_text[:2000], allowed_mentions=NO_PINGS, suppress_embeds=True)
+            else:
+                await message.add_reaction("🚫")  # no public detail on why
+                try:
+                    await message.author.send(res.private_text)
+                except discord.HTTPException:
+                    pass
+        except discord.HTTPException as e:
+            log.warning("Could not reply in channel %s (%s)", message.channel.id, e)
         await self._mod_log(message.author, question, res)
 
     async def close(self):
