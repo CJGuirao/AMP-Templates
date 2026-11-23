@@ -22,10 +22,10 @@ mkdir -p "${APP_HOME}/home" "${APP_HOME}/models" "${APP_HOME}/logs" "${APP_HOME}
 
 export OLLAMA_HOST=127.0.0.1:11434
 export OLLAMA_MODELS="${APP_HOME}/models"
-export OLLAMA_KEEP_ALIVE="${CLUBN_KEEP_ALIVE:-5m}"
+export OLLAMA_KEEP_ALIVE="${CLUBN_KEEP_ALIVE:-30m}"
 export OLLAMA_CONTEXT_LENGTH="${CLUBN_NUM_CTX:-8192}"
 export OLLAMA_NUM_PARALLEL=1
-export OLLAMA_MAX_LOADED_MODELS=1
+export OLLAMA_MAX_LOADED_MODELS=2  # answer model + small rules-check model
 export OLLAMA_MAX_QUEUE=16
 
 # Process substitution keeps $! pointing at Ollama itself (not at the log prefixer).

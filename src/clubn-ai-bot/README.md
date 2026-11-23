@@ -14,7 +14,7 @@ in this repository.
 2. **Cheap checks:** allowed channel and role, per-user cooldown and daily limit, length, `@everyone`
    and invites, known prompt-injection phrases, and your own blocked patterns. A plain greeting
    ("hola", "hello") gets a short fixed reply without using the model.
-3. **Rules check by the model:** LFM3 judges the question against `rules.md` plus the AMP
+3. **Rules check by the model:** the rules-check model judges the question against `rules.md` plus the AMP
    "Extra Server Rules" field and replies with a single label (`ok` or a refusal category). Anything
    other than exactly one known label, and any model error, is a refusal (fail closed). Refusals are shown only to the asker, and optionally
    reported in a staff channel.
@@ -29,25 +29,33 @@ in this repository.
 7. The answer is posted publicly with a "Fuentes:" list. Every decision is appended to
    `logs/audit.jsonl`.
 
-## Model choice: Liquid AI LFM3-1.7B
+## Model choice: two Liquid AI models
 
-[LFM3-1.7B](https://docs.liquid.ai/lfm/models/lfm3-1.7b) (released October 2026) is the text model of
-the LFM3 family. It supports Spanish and English, tool use and structured output, and the
-quantization-aware `Q4_0` build is about 1 GB. On an 8 GB, CPU-only VM that shares RAM with game
-servers this is the right size. Liquid AI reports a 2.75 GB peak at a 32K context; at the 8K context
-used here it should be lower (my estimate, not measured), and nothing once the model unloads.
+The bot uses two models, both from Liquid AI, both on CPU through Ollama:
 
-- Default: `hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0` (QAD build, ~1.05 GB).
-- Better quality if RAM allows: `hf.co/LiquidAI/LFM3-1.7B-GGUF:Q8_0` (~1.85 GB).
+- **Answers: [LFM2.5-24B-A2B](https://docs.liquid.ai/lfm/models/complete-library)** at `Q4_K_M`
+  (`hf.co/LiquidAI/LFM2.5-24B-A2B-GGUF:Q4_K_M`). It is a mixture-of-experts model: about 24B
+  parameters in total but only about 2B active per token, so it writes at roughly the speed of a 2B
+  model while knowing and reasoning far more. It needs about 15 GB of RAM (my estimate for Q4_K_M,
+  not measured). This is the setting for a server with 16 GB or more, such as 31 GB on a 6-core
+  i5-12500T.
+- **Rules checks: [LFM3-1.7B](https://docs.liquid.ai/lfm/models/lfm3-1.7b)** at `Q4_0`
+  (`hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0`, about 1 GB). The checks reply with one word, so the small
+  fast model keeps the waiting time down.
+
+On a machine with 8 GB of RAM, set Answer Model to `hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0` too. Answers
+will be noticeably weaker: Liquid AI says LFM3-1.7B is not meant for complex multi-step reasoning.
+
 - Needs Ollama 0.40.13 or newer on Linux (the image pins 0.40.13).
-- Reasoning ("thinking") is on by default in LFM3. The template turns it off for speed on CPU; switch
-  "Reasoning Mode" to On if answers seem shallow.
+- Reasoning ("thinking") is turned off for speed on CPU. Switch "Reasoning Mode" to On if answers seem
+  shallow and you can accept slower replies. Models without a reasoning mode simply ignore it.
 - Liquid AI's license (LFM Open License v1.0) is free for organisations under US$10M annual revenue.
-- Liquid AI says the model is small and not meant for complex multi-step reasoning. That is why the
-  bot never lets it answer from memory: it summarises retrieved sources and cites them.
+- Whatever the model, the bot never lets it answer from memory: it summarises retrieved sources and
+  cites them.
 
-The model unloads after the "Unload Model After Idle" time (default 5 minutes) and loads again on
-the next question, which adds a few seconds to that answer.
+Both models stay loaded for the "Unload Model After Idle" time (default 30 minutes) and load again on
+the next question, which adds a few seconds to that answer (longer for the 15 GB answer model on a
+slow disk). The first Update downloads both models, about 16 GB in total.
 
 ## Install in AMP
 
@@ -87,8 +95,9 @@ To update the bot later, press Update and restart. "Bot Source Version" can pin 
 | Answer When Mentioned | `CLUBN_ANSWER_ON_MENTION` | off |
 | System Prompt | `CLUBN_SYSTEM_PROMPT` | blank (`\n` = new line) |
 | Personality | `CLUBN_PERSONALITY` | friendly Club Ñ veteran, informal "tú" |
-| Model | `CLUBN_MODEL` | `hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0` |
-| Unload Model After Idle | `CLUBN_KEEP_ALIVE` | `5m` |
+| Answer Model | `CLUBN_MODEL` | `hf.co/LiquidAI/LFM2.5-24B-A2B-GGUF:Q4_K_M` |
+| Rules Check Model | `CLUBN_CHECK_MODEL` | `hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0` |
+| Unload Model After Idle | `CLUBN_KEEP_ALIVE` | `30m` |
 | Context Size | `CLUBN_NUM_CTX` | `8192` |
 | CPU Threads | `CLUBN_NUM_THREADS` | `0` (auto) |
 | Reasoning Mode | `CLUBN_THINK` | off |

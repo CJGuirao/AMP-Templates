@@ -121,21 +121,31 @@ class LLM:
             assert_loopback(cfg.base_url)
         # trust_env=False: never route model traffic through a proxy from the environment
         self._client = httpx.AsyncClient(timeout=cfg.timeout_s, trust_env=False)
+        self._no_think: set[str] = set()  # models that reject the think switch
+
+    @property
+    def models(self) -> list[str]:
+        """Every model the bot uses: the answer model, then the rules-check model if it differs."""
+        return list(dict.fromkeys(m for m in (self.cfg.model, self.cfg.check_model) if m))
 
     async def aclose(self):
         await self._client.aclose()
 
     async def ensure_model(self, log=print) -> None:
-        """Ollama only: download the configured model on first start (progress goes to the AMP console)."""
+        """Ollama only: download the configured models on first start (progress goes to the AMP console)."""
         if self.cfg.backend != "ollama":
             return
+        for model in self.models:
+            await self._ensure_one(model, log)
+
+    async def _ensure_one(self, model: str, log) -> None:
         base = self.cfg.base_url.rstrip("/")
-        r = await self._client.post(base + "/api/show", json={"model": self.cfg.model})
+        r = await self._client.post(base + "/api/show", json={"model": model})
         if r.status_code == 200:
             return
-        log(f"Model {self.cfg.model} not found locally, downloading it (first start only)...")
+        log(f"Model {model} not found locally, downloading it (first start only)...")
         last = ""
-        async with self._client.stream("POST", base + "/api/pull", json={"model": self.cfg.model},
+        async with self._client.stream("POST", base + "/api/pull", json={"model": model},
                                        timeout=None) as resp:
             async for line in resp.aiter_lines():
                 if not line:
@@ -162,20 +172,21 @@ class LLM:
         schema: dict | None = None,
         max_tokens: int = 512,
         temperature: float = 0.1,
+        model: str | None = None,
     ) -> str:
-        text, truncated = await self._chat(messages, schema, max_tokens, temperature)
+        text, truncated = await self._chat(messages, schema, max_tokens, temperature, model or self.cfg.model)
         if truncated and schema:
             raise LLMTruncated(f"reply hit the {max_tokens}-token limit")
         return text
 
-    async def _chat(self, messages, schema, max_tokens, temperature) -> tuple[str, bool]:
+    async def _chat(self, messages, schema, max_tokens, temperature, model) -> tuple[str, bool]:
         c = self.cfg
         # A repetition penalty punishes the quotes, commas and braces that JSON repeats on every field, which
         # pushes a small model to keep writing inside a string instead of closing it. Off for JSON replies.
         repeat_penalty = 1.0 if schema else 1.05
         if c.backend == "ollama":
             body = {
-                "model": c.model,
+                "model": model,
                 "messages": messages,
                 "stream": False,
                 "keep_alive": c.keep_alive,
@@ -191,12 +202,12 @@ class LLM:
                 body["options"]["num_thread"] = c.num_thread
             if schema:
                 body["format"] = schema
-            if c.think is not None:
+            if c.think is not None and model not in self._no_think:
                 body["think"] = c.think
             url = c.base_url.rstrip("/") + "/api/chat"
         elif c.backend == "openai":
             body = {
-                "model": c.model,
+                "model": model,
                 "messages": messages,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
@@ -216,6 +227,12 @@ class LLM:
 
         try:
             r = await self._client.post(url, json=body)
+            if r.status_code == 400 and "think" in body and "think" in r.text.lower():
+                # Ollama rejects the switch for models without a reasoning mode; they don't reason anyway.
+                log.info("Model %s has no reasoning mode; not sending the Reasoning Mode switch", model)
+                self._no_think.add(model)
+                del body["think"]
+                r = await self._client.post(url, json=body)
             r.raise_for_status()
             data = r.json()
         except (httpx.HTTPError, ValueError) as e:

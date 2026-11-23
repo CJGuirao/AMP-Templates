@@ -14,12 +14,16 @@ from pathlib import Path
 class LLMConfig:
     backend: str = "ollama"  # "ollama" (native API, supports keep_alive) or "openai" (llama-server)
     base_url: str = "http://127.0.0.1:11434"
-    model: str = "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0"
-    keep_alive: str = "5m"  # how long the model stays in RAM after the last question
-    num_ctx: int = 8192  # context actually allocated; LFM3 allows 256K but RAM grows with it
+    # Answers: a mixture-of-experts model with about 2B active parameters, so it writes at small-model speed
+    # on a CPU while knowing far more than a 2B model. About 15 GB of RAM at Q4_K_M.
+    model: str = "hf.co/LiquidAI/LFM2.5-24B-A2B-GGUF:Q4_K_M"
+    # Rules checks only reply with one word, so a small fast model is enough. Blank = use `model`.
+    check_model: str = "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0"
+    keep_alive: str = "30m"  # how long the models stay in RAM after the last question
+    num_ctx: int = 8192  # context actually allocated; RAM grows with it
     timeout_s: float = 300.0
     num_thread: int = 0  # CPU threads for inference; 0 = let the server decide
-    think: bool | None = False  # LFM3 reasons by default; off keeps CPU answers fast
+    think: bool | None = False  # reasoning before answering; off keeps CPU answers fast
     allow_remote: bool = False  # refuse non-loopback model endpoints unless explicitly allowed
     system_prompt: str = ""  # admin instructions for answers; can't override the fixed safety/citation rules
     personality: str = ""  # tone and style of answers
@@ -80,6 +84,7 @@ ENV_MAP: dict[str, tuple[str, str]] = {
     "CLUBN_LLM_BACKEND": ("llm", "backend"),
     "CLUBN_LLM_URL": ("llm", "base_url"),
     "CLUBN_MODEL": ("llm", "model"),
+    "CLUBN_CHECK_MODEL": ("llm", "check_model"),
     "CLUBN_KEEP_ALIVE": ("llm", "keep_alive"),
     "CLUBN_NUM_CTX": ("llm", "num_ctx"),
     "CLUBN_LLM_TIMEOUT": ("llm", "timeout_s"),
