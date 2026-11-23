@@ -616,3 +616,12 @@ def test_model_without_reasoning_mode_is_retried_without_think():
     assert asyncio.run(llm.chat([{"role": "user", "content": "q"}])) == "ok"
     assert asyncio.run(llm.chat([{"role": "user", "content": "q"}])) == "ok"
     assert ["think" in b for b in bodies] == [True, False, False]  # remembered after the first refusal
+
+
+def test_page_extraction_does_not_warn_about_socks():
+    import subprocess, sys
+    from pathlib import Path
+    code = "from clubn_bot.retrieval import html_to_text; print(html_to_text('<p>Hola mundo</p>'))"
+    out = subprocess.run([sys.executable, "-W", "always", "-c", code], capture_output=True, text=True,
+                         cwd=Path(__file__).resolve().parents[1])
+    assert out.returncode == 0 and "SOCKS" not in out.stderr

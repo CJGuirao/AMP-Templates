@@ -11,6 +11,7 @@ import math
 import re
 import socket
 import unicodedata
+import warnings
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,9 +58,18 @@ def clip(text: str, n: int) -> str:
     return text if len(text) <= n else text[:n].rsplit(" ", 1)[0] + " …"
 
 
+def _import_trafilatura():
+    # trafilatura tries urllib3's SOCKS support when imported, which warns if PySocks is missing. The bot only
+    # uses it to extract text from pages it already downloaded (never to fetch), so the warning is noise.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*SOCKS support in urllib3.*")
+        import trafilatura
+    return trafilatura
+
+
 def html_to_text(html: str, url: str = "") -> str:
     try:
-        import trafilatura
+        trafilatura = _import_trafilatura()
 
         out = trafilatura.extract(html, url=url or None, include_comments=False, include_tables=False)
         if out:
