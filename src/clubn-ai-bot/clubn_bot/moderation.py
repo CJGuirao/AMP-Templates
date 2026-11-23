@@ -107,6 +107,8 @@ class Moderator:
     def __init__(self, cfg: ModerationConfig, llm: LLM, rules_text: str):
         self.cfg = cfg
         self.llm = llm
+        cfg_llm = getattr(llm, "cfg", None)
+        self._check_model = getattr(cfg_llm, "check_model", "") or None  # None = the answer model
         self.rules_text = rules_text.strip()
         self.limiter = RateLimiter(cfg.per_user_cooldown_s, cfg.per_user_daily_limit)
         self._inj = [re.compile(p, re.I) for p in INJECTION_PATTERNS]
@@ -157,7 +159,8 @@ class Moderator:
         # A one-word label instead of a JSON object: a small model on CPU can't ramble its way past the
         # token limit, and anything other than exactly one known label is refused.
         try:
-            text = await self.llm.chat(self._messages(question), max_tokens=16, temperature=0.0)
+            text = await self.llm.chat(self._messages(question), max_tokens=16, temperature=0.0,
+                                       model=self._check_model)
         except LLMError as e:
             log.warning("Moderation check failed: %s", e)
             return Verdict(False, "error", f"No pude evaluar la pregunta ({e.__class__.__name__}).", [])
@@ -193,7 +196,7 @@ class Moderator:
             },
         ]
         try:
-            text = await self.llm.chat(msgs, max_tokens=8, temperature=0.0)
+            text = await self.llm.chat(msgs, max_tokens=8, temperature=0.0, model=self._check_model)
         except LLMError as e:
             log.warning("Answer check failed: %s", e)
             return False

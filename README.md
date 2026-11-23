@@ -5,7 +5,8 @@ Maintained by **Antonia Guirao, lead developer**.
 ## ClubÑ AI Bot (Linux Docker instance)
 
 The `cjguirao-clubn-ai-bot` Generic template runs a Discord question-answering bot for ClubÑ with a
-local Liquid AI LFM3-1.7B model on CPU (Ollama, loopback only, unloads when idle). It checks each
+local Liquid AI models on CPU (LFM2.5-24B-A2B for answers, LFM3-1.7B for rules checks; Ollama,
+loopback only, unloaded when idle). It checks each
 question against the server rules and answers only from cited sources. Every setting, including the
 Discord token, is entered in the AMP instance configuration. See
 [src/clubn-ai-bot/README.md](src/clubn-ai-bot/README.md) for setup, settings and security notes.

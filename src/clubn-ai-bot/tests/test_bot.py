@@ -549,3 +549,70 @@ def test_greetings_skip_the_model(tmp_path):
     assert res.status == "answered" and res.public_text.startswith("Hi!") and not llm.calls
     res = asyncio.run(p.handle(2, "Hola"))
     assert res.public_text.startswith("¡Hola!")
+
+
+# ---------- answer model and rules-check model ----------
+
+def test_checks_use_the_check_model_and_answers_the_answer_model(tmp_path):
+    import httpx
+    from clubn_bot.llm import LLM
+    seen = []
+    replies = iter([
+        {"message": {"content": "ok"}, "done_reason": "stop"},
+        {"message": {"content": json.dumps({"answerable": True, "answer": "Dato [1].", "sources_used": [1]})},
+         "done_reason": "stop"},
+        {"message": {"content": "allow"}, "done_reason": "stop"},
+    ])
+
+    def handler(request):
+        seen.append(json.loads(request.content)["model"])
+        return httpx.Response(200, json=next(replies))
+
+    (tmp_path / "rules.md").write_text("1. Respeto.\n", encoding="utf-8")
+    cfg = load_config({"CLUBN_DATA_DIR": str(tmp_path), "CLUBN_COOLDOWN_S": "0",
+                       "CLUBN_MODEL": "big:q4", "CLUBN_CHECK_MODEL": "small:q4"})
+    llm = LLM(cfg.llm)
+    llm._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    res = asyncio.run(Pipeline(cfg, llm=llm, retriever=FakeRetriever(SRC)).handle(1, "¿Cuándo se fundó?"))
+    assert res.status == "answered"
+    assert seen == ["small:q4", "big:q4", "small:q4"]
+    assert llm.models == ["big:q4", "small:q4"]
+    # one model for everything when both settings match
+    assert LLM(load_config({"CLUBN_MODEL": "a", "CLUBN_CHECK_MODEL": "a"}).llm).models == ["a"]
+
+
+def test_ensure_model_downloads_both_models():
+    import httpx
+    from clubn_bot.llm import LLM
+    pulled = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        if request.url.path == "/api/show":
+            return httpx.Response(404 if body["model"] != "have:it" else 200)
+        pulled.append(body["model"])
+        return httpx.Response(200, text='{"status":"success"}\n')
+
+    llm = LLM(load_config({"CLUBN_MODEL": "big:q4", "CLUBN_CHECK_MODEL": "have:it"}).llm)
+    llm._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    asyncio.run(llm.ensure_model(lambda m: None))
+    assert pulled == ["big:q4"]
+
+
+def test_model_without_reasoning_mode_is_retried_without_think():
+    import httpx
+    from clubn_bot.llm import LLM
+    bodies = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        if "think" in body:
+            return httpx.Response(400, json={"error": "\"x\" does not support thinking"})
+        return httpx.Response(200, json={"message": {"content": "ok"}, "done_reason": "stop"})
+
+    llm = LLM(load_config({"CLUBN_MODEL": "x"}).llm)
+    llm._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    assert asyncio.run(llm.chat([{"role": "user", "content": "q"}])) == "ok"
+    assert asyncio.run(llm.chat([{"role": "user", "content": "q"}])) == "ok"
+    assert ["think" in b for b in bodies] == [True, False, False]  # remembered after the first refusal

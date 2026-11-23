@@ -133,8 +133,8 @@
     "EnumValues": {}
   },
   {
-    "DisplayName": "Model",
-    "Description": "Ollama model to run. Default is Liquid AI LFM3-1.7B in the quantization-aware Q4_0 build (about 1 GB). Use hf.co/LiquidAI/LFM3-1.7B-GGUF:Q8_0 (about 1.9 GB) for slightly better quality if RAM allows. It is downloaded on the first Update or start.",
+    "DisplayName": "Answer Model",
+    "Description": "Ollama model that writes the answers. Default is Liquid AI LFM2.5-24B-A2B at Q4_K_M: a mixture-of-experts model with about 2B active parameters, so it writes at small-model speed on CPU. Needs about 15 GB of RAM. On a machine with 8 GB use hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0 instead.",
     "Keywords": "model,lfm3,liquid,ollama",
     "FieldName": "Model",
     "InputType": "text",
@@ -143,12 +143,26 @@
     "ParamFieldName": "Model",
     "IncludeInCommandLine": false,
     "Required": false,
+    "DefaultValue": "hf.co/LiquidAI/LFM2.5-24B-A2B-GGUF:Q4_K_M",
+    "EnumValues": {}
+  },
+  {
+    "DisplayName": "Rules Check Model",
+    "Description": "Ollama model for the two rules checks (question and answer). They reply with a single word, so a small fast model is enough (about 1 GB). Set it to the same value as Answer Model to use one model for everything.",
+    "Keywords": "model,moderation,rules,check",
+    "FieldName": "CheckModel",
+    "InputType": "text",
+    "Category": "ClubÑ AI Bot:smart_toy",
+    "Subcategory": "Local Model:memory:2",
+    "ParamFieldName": "CheckModel",
+    "IncludeInCommandLine": false,
+    "Required": false,
     "DefaultValue": "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0",
     "EnumValues": {}
   },
   {
     "DisplayName": "Unload Model After Idle",
-    "Description": "How long the model stays in RAM after the last question, for example 5m, 30s or 1h. 0 unloads immediately after every answer.",
+    "Description": "How long the models stay in RAM after the last question, for example 5m, 30s or 1h. 0 unloads immediately after every answer.",
     "Keywords": "model,keepalive,idle,unload,ram",
     "FieldName": "KeepAlive",
     "InputType": "text",
@@ -157,7 +171,7 @@
     "ParamFieldName": "KeepAlive",
     "IncludeInCommandLine": false,
     "Required": false,
-    "DefaultValue": "5m",
+    "DefaultValue": "30m",
     "EnumValues": {}
   },
   {
@@ -176,7 +190,7 @@
   },
   {
     "DisplayName": "CPU Threads",
-    "Description": "Threads used for inference. 0 lets Ollama decide; set it to the number of CPU cores given to this instance.",
+    "Description": "Threads used for inference. 0 lets Ollama decide (usually the number of physical cores, the fastest choice on CPU).",
     "Keywords": "model,cpu,threads",
     "FieldName": "NumThreads",
     "InputType": "number",
@@ -190,7 +204,7 @@
   },
   {
     "DisplayName": "Reasoning Mode",
-    "Description": "LFM3 reasons before answering by default. Off gives much faster answers on CPU; Auto leaves the model's default.",
+    "Description": "Whether the model reasons before answering, if it has a reasoning mode. Off gives much faster answers on CPU; Auto leaves the model's default.",
     "Keywords": "model,thinking,reasoning",
     "FieldName": "Think",
     "InputType": "enum",
