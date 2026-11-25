@@ -221,3 +221,13 @@ def test_social_posts_stay_off_by_default(merged_bot):
     assert merged_bot.client._clubn_social is None
     names = [c.name for c in merged_bot.client.tree.get_commands()]
     assert "anuncia_en_redes" not in names
+
+
+def test_every_social_setting_is_in_amp_and_secrets_are_password_fields():
+    src = (APP / "clubn_bot" / "social_networks.py").read_text(encoding="utf-8")
+    used = set(re.findall(r'g\("([A-Z_]+)"', src)) | set(re.findall(r'e\.get\("([A-Z_]+)"\)', src))
+    kinds = {s[0]: s[3] for s in web_settings.SETTINGS}
+    assert used - set(kinds) == set()
+    for var in used:
+        if re.search(r"SECRET|PASSWORD|TOKEN|API_KEY", var) and var not in ("X_API_KEY",):
+            assert kinds[var] == "password", var
