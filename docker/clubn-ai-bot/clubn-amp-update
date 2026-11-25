@@ -4,6 +4,9 @@
 # Everything lives in /AMP/clubn-ai-bot, which AMP's File Manager can see.
 set -euo pipefail
 
+# Secrets from the AMP settings: only the bot process gets them, never Ollama or the model download.
+NO_SECRETS="env -u CLUBN_DISCORD_TOKEN -u DISCORD_TOKEN -u WP_APP_PASSWORD -u ANTHROPIC_API_KEY -u DEEPSEEK_API_KEY -u YOUTUBE_API_KEY -u TWITCH_CLIENT_SECRET"
+
 APP_HOME="${CLUBN_DATA_DIR:-/AMP/clubn-ai-bot}"
 REPO="${CLUBN_SOURCE_REPO:-CJGuirao/AMP-Templates}"
 REF="${CLUBN_SOURCE_REF:-main}"
@@ -60,11 +63,14 @@ mkdir -p "${APP_HOME}/knowledge"
 for f in "${APP}/defaults/knowledge/"*; do
   [[ -e "${APP_HOME}/knowledge/$(basename "${f}")" ]] || cp -r "${f}" "${APP_HOME}/knowledge/"
 done
+# Template for the optional .env fallback (every setting is also in AMP); the real .env is never touched.
+cp "${APP}/defaults/env.example" "${APP_HOME}/.env.example"
+mkdir -p "${APP_HOME}/data"
 
 # Download or refresh the model. Start a temporary Ollama if the instance isn't running.
 export OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS="${APP_HOME}/models"
 if ! curl -fs "http://${OLLAMA_HOST}/api/version" >/dev/null 2>&1; then
-  env -u CLUBN_DISCORD_TOKEN /usr/bin/ollama serve >/dev/null 2>&1 &
+  ${NO_SECRETS} /usr/bin/ollama serve >/dev/null 2>&1 &
   temp_ollama=$!
   for _ in $(seq 1 30); do
     curl -fs "http://${OLLAMA_HOST}/api/version" >/dev/null 2>&1 && break
@@ -72,6 +78,6 @@ if ! curl -fs "http://${OLLAMA_HOST}/api/version" >/dev/null 2>&1; then
   done
 fi
 echo "Ollama $(/usr/bin/ollama --version 2>/dev/null | tail -n 1)"
-(cd "${APP}" && env -u CLUBN_DISCORD_TOKEN "${VENV}/bin/python" -m clubn_bot pull)
+(cd "${APP}" && ${NO_SECRETS} "${VENV}/bin/python" -m clubn_bot pull)
 
 echo "Update complete: bot code from ${REPO}@${REF}, model ${CLUBN_MODEL:-default}. Start the instance."

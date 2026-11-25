@@ -10,6 +10,9 @@ loopback only, unloaded when idle). It checks each
 question against the server rules and answers only from cited sources. Every setting, including the
 Discord token, is entered in the AMP instance configuration. See
 [src/clubn-ai-bot/README.md](src/clubn-ai-bot/README.md) for setup, settings and security notes.
+With the **Club Ñ Web Features** setting on, the same bot also runs the Club Ñ web features
+(creator articles, events calendar, Momentazos, Ahora en directo, /mis_redes), configured under
+**Configuration > Club Ñ Web**.
 
 ## Hermes Agent (Linux Docker instance)
 

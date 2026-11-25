@@ -8,6 +8,55 @@ instead of guessing.
 Everything is configured in the AMP instance settings. Nothing is hard-coded and no secret is stored
 in this repository.
 
+## Club Ñ web features (formerly SuperAntonia)
+
+With **Club Ñ Web Features** ticked in the AMP settings, the same bot process also runs everything
+SuperAntonia did, on the same Discord connection:
+
+- **Creator articles:** a member gets the creator role, the bot collects their socials, drafts a
+  WordPress article and posts a card in the mod channel (✅ publish, ✏️ change, 🗑️ discard). Daily sweep at 9:00.
+- **Events calendar:** Discord announcements and scheduled events become draft calendar entries and
+  articles in *Eventos*; every update needs a moderator's ✅.
+- **Momentazos page** and **Ahora en directo** (Twitch/YouTube live) page updates. No AI.
+- **/mis_redes:** creators propose changes to their own socials in the creator database; a moderator approves.
+- Mod commands: `/redes-creador`, `/generar-articulo`, `/evento-desde-mensaje`, `/evento-actualizar`,
+  `/eventos`, `/directo-creador`, `/directo-quitar`, `/directos-importar`, `/directos`.
+
+**AI for drafts:** Claude first, then DeepSeek, then this bot's local model as the last resort. A
+provider that answers "no credits" or "bad key" is skipped for 6 hours; any other error moves on to
+the next one for that draft only. Local drafts share the CPU queue with questions. Nothing is
+published without a moderator.
+
+**Settings:** all of them are in AMP, under **Configuration > Club Ñ Web** (secrets are password
+fields): WordPress user and application password, Claude/DeepSeek/YouTube/Twitch keys, channels,
+roles, page ids and one switch per feature. Optionally, a blank AMP field can be filled from
+`/AMP/clubn-ai-bot/.env` (template: `.env.example`, copied there by Update). Secrets are never in
+the repository, and Ollama and the model download never see them.
+
+**Discord:** run it with the token of the bot that owns the creator database (SuperAntonia): the
+live checker only trusts database messages written by itself. Turn on the **Server Members** and
+**Message Content** intents. The question command (Slash Command Name, e.g. `fulgencio`) replaces
+SuperAntonia's old `/fulgencio` placeholder. Only one copy may run at a time: stop the old
+SuperAntonia container before starting this, or every draft and card is made twice.
+
+**State:** SQLite at `/AMP/clubn-ai-bot/data/clubn_web.db`. To keep the history (articles in review,
+followed events, Momentazos seen, /mis_redes audit), copy `bot.db` from SuperAntonia's
+`creator-bot-data` volume to that path before the first start.
+
+**Tools** (from the instance console or a shell in the container):
+```
+cd /AMP/clubn-ai-bot/app
+../venv/bin/python -m clubn_bot web momentazos            # dry run; add --apply to update the page
+../venv/bin/python -m clubn_bot web live                  # who is live now
+../venv/bin/python -m clubn_bot web mis_redes --audit
+```
+
+**Maintenance:** `clubn_web/` is an unmodified copy of SuperAntonia's `bot/` package;
+refresh it with `python tools/sync_clubn_web.py <path to that bot/ folder>`. The wiring lives in `clubn_bot/merged.py` and
+`clubn_bot/ai_chain.py`. New settings go in `clubn_bot/web_settings.py`, then
+`python tools/gen_amp_settings.py` regenerates the AMP files and `defaults/env.example`; the tests
+fail if a `clubn_web` setting is missing from AMP.
+
 ## How a question flows
 
 1. A member runs `/pregunta` (the name is configurable) in an allowed channel.

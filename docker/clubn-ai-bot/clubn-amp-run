@@ -4,6 +4,9 @@
 # exits, so AMP's auto-retry restarts the pair cleanly.
 set -euo pipefail
 
+# Secrets from the AMP settings: only the bot process gets them, never Ollama or the model download.
+NO_SECRETS="env -u CLUBN_DISCORD_TOKEN -u DISCORD_TOKEN -u WP_APP_PASSWORD -u ANTHROPIC_API_KEY -u DEEPSEEK_API_KEY -u YOUTUBE_API_KEY -u TWITCH_CLIENT_SECRET"
+
 APP_HOME="${CLUBN_DATA_DIR:-/AMP/clubn-ai-bot}"
 VENV="${APP_HOME}/venv"
 APP="${APP_HOME}/app"
@@ -12,12 +15,13 @@ if [[ ! -x "${VENV}/bin/python" || ! -f "${APP}/clubn_bot/__main__.py" ]]; then
   echo "ClubÑ AI Bot is not installed. Run AMP Update before starting this instance." >&2
   exit 2
 fi
-if [[ -z "${CLUBN_DISCORD_TOKEN:-}" ]]; then
+if [[ -z "${CLUBN_DISCORD_TOKEN:-}" ]]    && ! grep -Eq '^[[:space:]]*(export[[:space:]]+)?(CLUBN_)?DISCORD_TOKEN=[^[:space:]#]' "${APP_HOME}/.env" 2>/dev/null; then
   echo "Required AMP setting 'Discord Bot Token' is empty. Set it in the instance configuration, then start again." >&2
   exit 2
 fi
+[[ -f "${APP_HOME}/.env" ]] && chmod 600 "${APP_HOME}/.env" 2>/dev/null || true
 
-mkdir -p "${APP_HOME}/home" "${APP_HOME}/models" "${APP_HOME}/logs" "${APP_HOME}/knowledge"
+mkdir -p "${APP_HOME}/home" "${APP_HOME}/models" "${APP_HOME}/logs" "${APP_HOME}/knowledge" "${APP_HOME}/data"
 [[ -f "${APP_HOME}/rules.md" ]] || cp "${APP}/defaults/rules.md" "${APP_HOME}/rules.md"
 
 export OLLAMA_HOST=127.0.0.1:11434
@@ -29,7 +33,7 @@ export OLLAMA_MAX_LOADED_MODELS=2  # answer model + small rules-check model
 export OLLAMA_MAX_QUEUE=16
 
 # Process substitution keeps $! pointing at Ollama itself (not at the log prefixer).
-env -u CLUBN_DISCORD_TOKEN /usr/bin/ollama serve > >(sed -u 's/^/[ollama] /') 2>&1 &
+${NO_SECRETS} /usr/bin/ollama serve > >(sed -u 's/^/[ollama] /') 2>&1 &
 ollama_pid=$!
 
 cd "${APP}"
