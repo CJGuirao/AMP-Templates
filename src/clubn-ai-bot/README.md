@@ -104,8 +104,8 @@ faces or anything a member wouldn't want public.
 | Facebook Page | direct (Meta Graph API) or Postiz | Page ID + long-lived **Page token** | free |
 | Instagram | direct (Graph API) or Postiz | professional account linked to the Page, same token | free |
 | Threads | direct (Threads API) or Postiz | long-lived Threads token (the bot renews it weekly) | free |
-| X | Postiz only | X developer app connected in Postiz | X charges per post |
-| TikTok | Postiz only | TikTok channel connected in Postiz | free; public posts need TikTok's audit |
+| X | direct (X API v2, OAuth 1.0a) or Postiz | developer app with Read and write: 4 keys | X charges per post |
+| TikTok | Postiz, or by hand | TikTok channel connected in Postiz | free; public posts need TikTok's audit |
 
 A network with its own keys in AMP is posted directly; otherwise it goes through Postiz if Postiz has it
 connected; otherwise the card shows the text for a moderator to post by hand.
@@ -129,6 +129,55 @@ connected; otherwise the card shows the text for a moderator to post by hand.
 
 Tokens and keys are AMP password fields, never in git, and Ollama never sees them. Posting state lives in
 the same SQLite file (`social_posts`, `social_seen` tables).
+
+### Setting up the official APIs
+
+Fill the fields in AMP (**Configuration > Club Ñ Web > Social posting**), restart, and run `/redes-estado`:
+each network you set up should say *API oficial*. Leave *Test Mode* ticked, try `/anuncia_en_redes` on a
+real announcement, and untick it when the cards look right. Use the Club's own accounts for everything.
+
+**Bluesky** (5 minutes)
+1. Sign in to the Club's account. Settings > Privacy and security > App passwords > Add app password.
+2. *Bluesky Handle* = the handle without @ (e.g. `clubn.bsky.social`), *Bluesky App Password* = that password.
+
+**Facebook Page and Instagram** (one Meta app for both)
+1. The Instagram account must be **professional** (Business or Creator) and linked to the Club's Facebook Page
+   (Page settings > Linked accounts, or Meta Accounts Center).
+2. [developers.facebook.com](https://developers.facebook.com/apps) > Create app, with the use cases for managing
+   a Page and for Instagram content. You (an admin of the Page) are the app's admin.
+3. Graph API Explorer: pick the app, *Get User Access Token* with `pages_show_list`, `pages_read_engagement`,
+   `pages_manage_posts`, `instagram_basic`, `instagram_content_publish` (and `business_management` if the Page
+   is in a Business portfolio). Extend it to a long-lived token in the Access Token Debugger.
+4. With that long-lived token, `GET /me/accounts` lists the Page's `id` and `access_token`. A Page token
+   obtained from a long-lived user token does not expire. Then `GET /<page id>?fields=instagram_business_account`
+   gives the Instagram account id.
+5. *Facebook Page ID*, *Instagram Account ID*, *Meta Page Token* = those three values.
+6. Meta may require the app to be in Live mode (and App Review for those permissions) before posts are
+   public. If a test post only shows to you, that is why.
+
+**Threads** (its own Meta app)
+1. developers.facebook.com > Create app with the *Access the Threads API* use case; add `threads_basic` and
+   `threads_content_publish`.
+2. App roles > Add the Club's Threads account as a *Threads Tester*, then accept the invite in Threads
+   (Settings > Account > Website permissions).
+3. Generate a user token for it in the use case settings. If it is the short-lived kind, exchange it for a
+   60-day token (`GET https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=...&access_token=...`).
+4. *Threads Token* = that token (*Threads User ID* can stay `me`). The bot renews it every week, so it
+   never reaches the 60 days.
+
+**X**
+1. [console.x.com](https://console.x.com) (or developer.x.com), signed in as the Club's account: create a
+   project and app and add credit (pay-per-use).
+2. App > User authentication settings: permissions **Read and write**, type *Web App, Automated App or Bot*,
+   callback and website `https://clubn.online`.
+3. Keys and tokens: copy the API Key and Secret, then **generate** the Access Token and Secret (after setting
+   Read and write; tokens made before that are read-only).
+4. *X API Key*, *X API Key Secret*, *X Access Token*, *X Access Token Secret*. Posts are text plus the link
+   (X shows the link card); each one is billed.
+
+**TikTok**: no official setup for now. Public posting needs TikTok to audit the app, so the card shows the
+caption and the picture for a moderator to post from the TikTok app. Untick it in the network menu, or remove
+`tiktok` from *Networks*, if nobody will.
 
 ## How a question flows
 

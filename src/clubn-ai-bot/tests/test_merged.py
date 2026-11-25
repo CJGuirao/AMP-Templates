@@ -55,7 +55,8 @@ def test_every_clubn_web_setting_is_in_amp():
 def test_secrets_are_password_fields_and_kept_from_ollama():
     assert set(web_settings.SECRETS) == {"WP_APP_PASSWORD", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY",
                                          "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET", "POSTIZ_API_KEY",
-                                         "BLUESKY_APP_PASSWORD", "META_PAGE_TOKEN", "THREADS_TOKEN"}
+                                         "BLUESKY_APP_PASSWORD", "META_PAGE_TOKEN", "THREADS_TOKEN",
+                                         "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET"}
     for script in ("clubn-amp-run", "clubn-amp-update"):
         text = (ROOT / "docker" / "clubn-ai-bot" / script).read_text(encoding="utf-8")
         line = next(l for l in text.splitlines() if l.startswith("NO_SECRETS="))

@@ -5,8 +5,8 @@ Each network is published one of three ways ("routes"), picked in this order:
           (Bluesky, Facebook Page and Instagram through Meta's Graph API, Threads);
   postiz  a Postiz workspace (cloud or self-hosted) that has that network connected;
   manual  nothing connected: the moderators get the text on the card and post it by hand.
-X and TikTok have no direct client on purpose: X charges for every post and TikTok only lets
-audited apps post publicly, so both go through Postiz (or by hand).
+X is posted directly with OAuth 1.0a user keys (X bills every post: pay-per-use). TikTok has no direct
+client: its API only lets audited apps post publicly, so it goes through Postiz or by hand.
 
 Nothing here decides to publish: social_posts.py calls publish() only after a moderator's ✅.
 In test mode (SOCIAL_DRY_RUN) publish() checks the route and returns without calling any API.
@@ -14,13 +14,18 @@ In test mode (SOCIAL_DRY_RUN) publish() checks the route and returns without cal
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
 import hashlib
+import hmac
 import logging
 import os
 import re
+import secrets
+import time
 from dataclasses import dataclass, field
 from typing import Callable
+from urllib.parse import quote
 
 import httpx
 
@@ -77,6 +82,10 @@ class Settings:
     meta_token: str = field(default="", repr=False)
     threads_user_id: str = "me"
     threads_token: str = field(default="", repr=False)
+    x_api_key: str = ""
+    x_api_secret: str = field(default="", repr=False)
+    x_access_token: str = field(default="", repr=False)
+    x_access_secret: str = field(default="", repr=False)
 
     @classmethod
     def from_env(cls, env: dict | None = None) -> "Settings":
@@ -115,6 +124,8 @@ class Settings:
             facebook_page_id=g("FACEBOOK_PAGE_ID"), instagram_user_id=g("INSTAGRAM_USER_ID"),
             meta_token=g("META_PAGE_TOKEN"),
             threads_user_id=g("THREADS_USER_ID", "me"), threads_token=g("THREADS_TOKEN"),
+            x_api_key=g("X_API_KEY"), x_api_secret=g("X_API_SECRET"),
+            x_access_token=g("X_ACCESS_TOKEN"), x_access_secret=g("X_ACCESS_SECRET"),
         )
 
     def direct(self, net: str) -> bool:
@@ -123,6 +134,7 @@ class Settings:
             "facebook": bool(self.facebook_page_id and self.meta_token),
             "instagram": bool(self.instagram_user_id and self.meta_token),
             "threads": bool(self.threads_token),
+            "x": bool(self.x_api_key and self.x_api_secret and self.x_access_token and self.x_access_secret),
         }.get(net, False)
 
 
@@ -436,6 +448,28 @@ class Router:
                     raise PublishError(f"{what}: el servidor rechazó la imagen ({status})")
             await self.sleep(3)
         raise PublishError(f"{what}: la imagen tarda demasiado en procesarse")
+
+    # ----- X API v2 (OAuth 1.0a user context: the account that owns the access token) -----
+    def x_auth(self, method: str, url: str, nonce: str | None = None, timestamp: str | None = None) -> str:
+        """OAuth 1.0a header. A JSON body is not part of the signature (only form/query parameters are)."""
+        s = self.s
+        oauth = {"oauth_consumer_key": s.x_api_key, "oauth_nonce": nonce or secrets.token_hex(16),
+                 "oauth_signature_method": "HMAC-SHA1", "oauth_timestamp": timestamp or str(int(time.time())),
+                 "oauth_token": s.x_access_token, "oauth_version": "1.0"}
+        enc = lambda v: quote(str(v), safe="~-._")  # noqa: E731
+        params = "&".join(f"{enc(k)}={enc(v)}" for k, v in sorted(oauth.items()))
+        base = "&".join((method.upper(), enc(url), enc(params)))
+        key = f"{enc(s.x_api_secret)}&{enc(s.x_access_secret)}"
+        oauth["oauth_signature"] = base64.b64encode(hmac.new(key.encode(), base.encode(), hashlib.sha1).digest()).decode()
+        return "OAuth " + ", ".join(f'{enc(k)}="{enc(v)}"' for k, v in sorted(oauth.items()))
+
+    async def _x(self, full: str, post: Post) -> Result:
+        url = "https://api.x.com/2/tweets"
+        r = await self.http.post(url, json={"text": full}, headers={"Authorization": self.x_auth("POST", url)})
+        if r.status_code not in (200, 201):
+            raise _err(r, "X")
+        tid = r.json()["data"]["id"]
+        return Result(True, "direct", "publicado", url=f"https://x.com/i/web/status/{tid}", remote_id=tid)
 
     # ----- Threads API (long-lived token, refreshed by the bot) -----
     def threads_token(self) -> str:

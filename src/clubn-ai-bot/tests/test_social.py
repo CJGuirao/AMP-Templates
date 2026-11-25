@@ -537,3 +537,28 @@ def test_without_link_bluesky_and_facebook_post_the_picture():
     assert record["embed"]["$type"] == "app.bsky.embed.images"
     fb = run(r.publish("facebook", "Torneo", post))
     assert fb.ok and fb.url == "https://www.facebook.com/1_2"
+
+
+def test_x_direct_signs_with_oauth1_and_posts_text():
+    seen = {}
+
+    def h(request):
+        seen["auth"] = request.headers["Authorization"]
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(201, json={"data": {"id": "190", "text": "x"}})
+
+    s = Settings(dry_run=False, x_api_key="ck", x_api_secret="cs", x_access_token="at", x_access_secret="as")
+    r, _ = router(s, h)
+    assert run(r.route("x")) == "direct"
+    res = run(r.publish("x", "Torneo #ClubÑ", POST))
+    assert res.ok and res.url == "https://x.com/i/web/status/190"
+    assert seen["body"] == {"text": "Torneo #ClubÑ\n\nhttps://wp.clubn.online/flor/"}
+    assert seen["auth"].startswith("OAuth ") and 'oauth_consumer_key="ck"' in seen["auth"] and "cs" not in seen["auth"]
+
+
+def test_x_oauth1_signature_is_correct():
+    # Expected value computed independently with oauthlib for the same keys, nonce and timestamp.
+    s = Settings(x_api_key="ck", x_api_secret="cs", x_access_token="at", x_access_secret="as")
+    header = Router(s, http=httpx.AsyncClient()).x_auth("POST", "https://api.x.com/2/tweets",
+                                                       nonce="abc123", timestamp="1700000000")
+    assert 'oauth_signature="1Qbah5xUWfIKDIUrAKmyzH2DCK0%3D"' in header
