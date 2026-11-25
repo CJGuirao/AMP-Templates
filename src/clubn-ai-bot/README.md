@@ -21,6 +21,8 @@ SuperAntonia did, on the same Discord connection:
 - **/mis_redes:** creators propose changes to their own socials in the creator database; a moderator approves.
 - Mod commands: `/redes-creador`, `/generar-articulo`, `/evento-desde-mensaje`, `/evento-actualizar`,
   `/eventos`, `/directo-creador`, `/directo-quitar`, `/directos-importar`, `/directos`.
+- **Social posts** (off by default, see below): drafts for X, Bluesky, Threads, Facebook, Instagram and
+  TikTok from new web articles, reviewed and approved by a moderator. Commands `/redes-proponer`, `/redes-estado`.
 
 **AI for drafts:** Claude first, then DeepSeek, then this bot's local model as the last resort. A
 provider that answers "no credits" or "bad key" is skipped for 6 hours; any other error moves on to
@@ -56,6 +58,66 @@ refresh it with `python tools/sync_clubn_web.py <path to that bot/ folder>`. The
 `clubn_bot/ai_chain.py`. New settings go in `clubn_bot/web_settings.py`, then
 `python tools/gen_amp_settings.py` regenerates the AMP files and `defaults/env.example`; the tests
 fail if a `clubn_web` setting is missing from AMP.
+
+## Social posts (off by default)
+
+With **Configuration > Club Ñ Web > Social posting > Social Posting** ticked, new public articles on
+the website (by default in *Creadores_de_contenido* and *Eventos*) get a draft post for each of the
+Club's networks: X, Bluesky, Threads, Facebook, Instagram and TikTok. Nothing is ever posted
+without a moderator.
+
+1. Every 10 minutes the bot looks for articles published since the last check. The first check only
+   notes what is already public, so turning this on does not flood the mod channel. Moderators can also
+   run `/redes-proponer enlace:<article link>` (or `tema:` for something with no article).
+2. The AI chain (Claude, DeepSeek, local model) writes one text per network in neutral Spanish for Spain
+   and Latin America, inside each network's limit (X 280 with the link counted as 23, Bluesky 300,
+   Threads 500, Instagram/TikTok 2200). The code adds the link, never the AI; Instagram gets
+   "🔗 Enlace en la bio".
+3. A card in the mod review channel shows every text, its length, and how it will go out (official API,
+   Postiz, or *a mano* when that network isn't connected). Moderators can:
+   - **✅ Publicar** to the networks ticked in the menu under the buttons;
+   - **✏️ Pedir cambios** (or reply to the card) to have the AI rewrite with their notes: a new card replaces the old one;
+   - **📝 Editar texto** to rewrite one network's text by hand, no AI;
+   - **🗑️ Descartar**.
+4. A network that fails stays ticked and the card stays open for a retry. Networks that worked are never
+   posted twice. `/redes-estado` shows the connection of each network.
+
+**Test mode** (on by default): the whole flow works but ✅ only reports what would be posted. Untick
+*Test Mode* once the cards look right.
+
+### Which API for each network
+
+| Network | Route in this bot | What you need | Cost |
+|---|---|---|---|
+| Bluesky | direct (AT Protocol) | handle + an **app password** | free |
+| Facebook Page | direct (Meta Graph API) or Postiz | Page ID + long-lived **Page token** | free |
+| Instagram | direct (Graph API) or Postiz | professional account linked to the Page, same token | free |
+| Threads | direct (Threads API) or Postiz | long-lived Threads token (the bot renews it weekly) | free |
+| X | Postiz only | X developer app connected in Postiz | X charges per post |
+| TikTok | Postiz only | TikTok channel connected in Postiz | free; public posts need TikTok's audit |
+
+A network with its own keys in AMP is posted directly; otherwise it goes through Postiz if Postiz has it
+connected; otherwise the card shows the text for a moderator to post by hand.
+
+- **Official APIs** are free and have no middleman, but each network has its own developer app, review
+  and token rules. Meta covers Facebook, Instagram and Threads with one developer account (one app with the
+  Threads use case added). The app only posts to the Club's own Page and accounts, but Meta may still
+  ask for the app to be switched to Live mode, and for App Review of `pages_manage_posts` and
+  `instagram_content_publish`, before posts are public. Expect some days of paperwork; this is not verified.
+- **Postiz** ([docs](https://docs.postiz.com/public-api/introduction)) is one API key for every network,
+  including X and TikTok. *Postiz Cloud* (paid plan) uses its own approved apps, so you connect accounts
+  with a click. *Self-hosted Postiz* is free but you still create a developer app per network. Its create-post
+  endpoint is limited to about 90 posts an hour, which is plenty here.
+- **X** moved to pay-per-use in 2026: about $0.015 per post and about $0.20 per post with a link, according to
+  third-party summaries of X's prices (check the X Developer Console). Every Club post carries a link.
+- **TikTok** only takes photos or videos, and apps that haven't passed TikTok's audit can only post
+  privately. The default *TikTok Mode* is `UPLOAD`: the post lands in the TikTok app's inbox and a person
+  finishes it there within 24 hours.
+- **Instagram and TikTok need an image**: the article's featured image (JPEG size, since Instagram only takes
+  JPEG). Articles with no image are refused for those two and the card says so.
+
+Tokens and keys are AMP password fields, never in git, and Ollama never sees them. Posting state lives in
+the same SQLite file (`social_posts`, `social_seen` tables).
 
 ## How a question flows
 

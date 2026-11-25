@@ -54,7 +54,8 @@ def test_every_clubn_web_setting_is_in_amp():
 
 def test_secrets_are_password_fields_and_kept_from_ollama():
     assert set(web_settings.SECRETS) == {"WP_APP_PASSWORD", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY",
-                                         "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET"}
+                                         "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET", "POSTIZ_API_KEY",
+                                         "BLUESKY_APP_PASSWORD", "META_PAGE_TOKEN", "THREADS_TOKEN"}
     for script in ("clubn-amp-run", "clubn-amp-update"):
         text = (ROOT / "docker" / "clubn-ai-bot" / script).read_text(encoding="utf-8")
         line = next(l for l in text.splitlines() if l.startswith("NO_SECRETS="))
@@ -212,3 +213,9 @@ def test_merged_command_tree(merged_bot):
         assert n in names, (n, names)
     fulg = client.tree.get_command("fulgencio")
     assert [p.name for p in fulg.parameters] == ["pregunta"]  # the real one, not the old placeholder
+
+
+def test_social_posts_stay_off_by_default(merged_bot):
+    assert merged_bot.client._clubn_social is None
+    names = [c.name for c in merged_bot.client.tree.get_commands()]
+    assert "redes-proponer" not in names

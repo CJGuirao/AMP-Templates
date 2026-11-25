@@ -8,7 +8,8 @@ source folder (tools/sync_clubn_web.py). Everything that adapts it to Fulgencio 
   for "the other program" (that program is now this one);
 - the AI chain Claude -> DeepSeek -> Fulgencio's local model for article and event drafts;
 - the local model is checked/downloaded in the background, so the web features start straight away;
-- "ClubN bot ready" is still printed on ready, which is what AMP waits for.
+- "ClubN bot ready" is still printed on ready, which is what AMP waits for;
+- optionally (SOCIAL_ENABLED, off by default) the social posts workflow in social_posts.py.
 """
 from __future__ import annotations
 
@@ -73,6 +74,21 @@ def build(cfg: Config, token: str, *, local_llm=None, pipeline=None):
                   cpu_lock=fulgencio.worker._sem)
     writer.structured = chain.structured  # write_article() and events.py look it up at call time
 
+    from .social_networks import Settings as SocialSettings
+
+    social = None
+    social_cfg = SocialSettings.from_env()
+    if social_cfg.enabled:
+        from . import social_posts
+
+        web_config = importlib.import_module("clubn_web.config")
+        social = social_posts.setup(client, structured=chain.structured, is_mod=web.is_mod, wp=client.wp,
+                                    db_path=web_config.DB_PATH, default_review_channel=web_config.REVIEW_CHANNEL_ID,
+                                    settings=social_cfg)
+        log.info("Social posts on (%s); networks: %s", "test mode" if social_cfg.dry_run else "LIVE",
+                 ", ".join(social_cfg.networks))
+    client._clubn_social = social
+
     web_setup_hook = client.setup_hook
     web_on_message = getattr(client, "on_message", None)
     web_on_ready = getattr(client, "on_ready", None)
@@ -80,9 +96,15 @@ def build(cfg: Config, token: str, *, local_llm=None, pipeline=None):
 
     async def setup_hook():
         client._clubn_warm_task = asyncio.get_running_loop().create_task(_warm_model(fulgencio))
+        if social is not None:
+            from . import social_posts
+
+            await social_posts.start(social)
         await web_setup_hook()  # registers everything and syncs the command list once
 
     async def on_message(message):
+        if social is not None and await social.on_message(message):  # a mod replying to a social card
+            return
         if web_on_message is not None:
             await web_on_message(message)
         await fulgencio.on_message(message)
@@ -97,6 +119,10 @@ def build(cfg: Config, token: str, *, local_llm=None, pipeline=None):
     async def close():
         try:
             await fulgencio.aclose()
+            if social is not None:
+                if social._task is not None:
+                    social._task.cancel()
+                await social.router.aclose()
             if chain.local is not None and chain.local is not fulgencio.pipeline.llm:
                 await chain.local.aclose()
         finally:

@@ -19,6 +19,7 @@ MIS_REDES = "/mis_redes:share:5"
 WORDPRESS = "WordPress:public:6"
 AI = "AI models:psychology:7"
 APIS = "Social APIs:key:8"
+SOCIAL = "Social posting:campaign:9"
 
 SETTINGS: list[tuple[str, str, str, str, str, str, str]] = [
     # ----- Discord and creators -----
@@ -136,6 +137,49 @@ SETTINGS: list[tuple[str, str, str, str, str, str, str]] = [
      "Twitch app client id (needed for Ahora en directo and Twitch login checks)."),
     ("TWITCH_CLIENT_SECRET", "WebTwitchClientSecret", "Twitch Client Secret", "password", "", APIS,
      "Twitch app client secret."),
+    # ----- Social posting (clubn_bot/social_posts.py) -----
+    ("SOCIAL_ENABLED", "WebSocialEnabled", "Social Posting", "checkbox", "false", SOCIAL,
+     "Draft posts for the Club's social networks from new web articles; moderators review, edit and approve each one."),
+    ("SOCIAL_DRY_RUN", "WebSocialDryRun", "Test Mode (Nothing Is Posted)", "checkbox", "true", SOCIAL,
+     "While on, the whole review flow works but ✅ only reports what would be posted. Untick to post for real."),
+    ("SOCIAL_REVIEW_CHANNEL_ID", "WebSocialReviewChannelId", "Review Channel ID", "text", "", SOCIAL,
+     "Blank = the Mod Review Channel."),
+    ("SOCIAL_NETWORKS", "WebSocialNetworks", "Networks", "text", "x,bluesky,threads,facebook,instagram,tiktok", SOCIAL,
+     "Comma-separated: x, bluesky, threads, facebook, instagram, tiktok. A network with no connection gets a text to post by hand."),
+    ("SOCIAL_WP_CATEGORIES", "WebSocialWpCategories", "Website Categories", "text", "Creadores_de_contenido,Eventos",
+     SOCIAL, "New public posts in these WordPress categories get a social draft. * = every category."),
+    ("SOCIAL_POLL_MIN", "WebSocialPollMin", "Website Check (minutes)", "number", "10", SOCIAL,
+     "How often to look for newly published articles."),
+    ("SOCIAL_MAX_AGE_HOURS", "WebSocialMaxAgeHours", "Ignore Articles Older Than (hours)", "number", "48", SOCIAL,
+     "Articles published longer ago than this never get an automatic draft."),
+    ("SOCIAL_HASHTAGS", "WebSocialHashtags", "Club Hashtags", "text", "ClubÑ", SOCIAL,
+     "Hashtags every post should include, comma-separated, without the #."),
+    ("SOCIAL_STYLE", "WebSocialStyle", "Style Notes", "text", "", SOCIAL,
+     "Optional extra instructions for the writer (tone, emojis, words to avoid)."),
+    ("POSTIZ_URL", "WebPostizUrl", "Postiz API URL", "text", "https://api.postiz.com/public/v1", SOCIAL,
+     "Postiz cloud, or https://<your-postiz>/api/public/v1 when self-hosted."),
+    ("POSTIZ_API_KEY", "WebPostizApiKey", "Postiz API Key", "password", "", SOCIAL,
+     "Postiz > Settings > Public API. Every network connected in Postiz is used unless it has its own keys below."),
+    ("SOCIAL_TIKTOK_METHOD", "WebSocialTiktokMethod", "TikTok Mode", "text", "UPLOAD", SOCIAL,
+     "UPLOAD = goes to the TikTok app's inbox to finish by hand (works without TikTok's audit). DIRECT_POST = public post (needs an audited app)."),
+    ("BLUESKY_HANDLE", "WebBlueskyHandle", "Bluesky Handle", "text", "", SOCIAL,
+     "e.g. clubn.bsky.social. With the app password, Bluesky is posted directly (free)."),
+    ("BLUESKY_APP_PASSWORD", "WebBlueskyAppPassword", "Bluesky App Password", "password", "", SOCIAL,
+     "Bluesky > Settings > Privacy and security > App passwords. Not the account password."),
+    ("BLUESKY_PDS", "WebBlueskyPds", "Bluesky Server", "text", "https://bsky.social", SOCIAL,
+     "Only change it for an account on another PDS."),
+    ("META_GRAPH_VERSION", "WebMetaGraphVersion", "Meta Graph API Version", "text", "v24.0", SOCIAL,
+     "Facebook/Instagram Graph API version."),
+    ("FACEBOOK_PAGE_ID", "WebFacebookPageId", "Facebook Page ID", "text", "", SOCIAL,
+     "With the Meta Page token, the Facebook Page is posted directly."),
+    ("INSTAGRAM_USER_ID", "WebInstagramUserId", "Instagram Account ID", "text", "", SOCIAL,
+     "Instagram professional account id linked to the Page. With the Meta Page token, Instagram is posted directly."),
+    ("META_PAGE_TOKEN", "WebMetaPageToken", "Meta Page Token", "password", "", SOCIAL,
+     "Long-lived Page access token (pages_manage_posts, instagram_content_publish)."),
+    ("THREADS_USER_ID", "WebThreadsUserId", "Threads User ID", "text", "me", SOCIAL,
+     "me = the token's own account."),
+    ("THREADS_TOKEN", "WebThreadsToken", "Threads Token", "password", "", SOCIAL,
+     "Long-lived Threads token (threads_basic, threads_content_publish). The bot renews it weekly."),
 ]
 
 VARIABLES = [s[0] for s in SETTINGS]
