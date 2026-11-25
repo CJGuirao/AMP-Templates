@@ -21,6 +21,9 @@ SuperAntonia did, on the same Discord connection:
 - **/mis_redes:** creators propose changes to their own socials in the creator database; a moderator approves.
 - Mod commands: `/redes-creador`, `/generar-articulo`, `/evento-desde-mensaje`, `/evento-actualizar`,
   `/eventos`, `/directo-creador`, `/directo-quitar`, `/directos-importar`, `/directos`.
+- **Social posts** (off by default, see below): `/anuncia_en_redes` turns a Discord channel, thread or
+  message, or a web article, into ads for X, Bluesky, Threads, Facebook, Instagram and TikTok; a moderator
+  reviews, edits and approves them. Also `/redes-estado`.
 
 **AI for drafts:** Claude first, then DeepSeek, then this bot's local model as the last resort. A
 provider that answers "no credits" or "bad key" is skipped for 6 hours; any other error moves on to
@@ -56,6 +59,134 @@ refresh it with `python tools/sync_clubn_web.py <path to that bot/ folder>`. The
 `clubn_bot/ai_chain.py`. New settings go in `clubn_bot/web_settings.py`, then
 `python tools/gen_amp_settings.py` regenerates the AMP files and `defaults/env.example`; the tests
 fail if a `clubn_web` setting is missing from AMP.
+
+## Social posts (off by default)
+
+With **Configuration > Club Ñ Web > Social posting > Social Posting** ticked, moderators (and the roles in
+*Who May Use /anuncia_en_redes*) can turn anything the Club announces into ads for its networks: X, Bluesky,
+Threads, Facebook, Instagram and TikTok. Nothing is ever posted without a moderator's ✅.
+
+1. **`/anuncia_en_redes enlace:<link>`** with a link to a Discord channel, thread or message (right click >
+   Copy Message Link), or to an article on the website. Optional `notas` (what to stress, tone, audience)
+   and `enlace_publico` (the link the ads carry; by default the article, or *Default Link* for Discord).
+   The bot reads the text (the last 30 messages of a channel or thread, or the message and its thread) and
+   collects the pictures: Discord attachments and embed images (icons and avatars are skipped), or the
+   article's featured and inline images. Discord picture links expire, so they are copied into the
+   WordPress media library first.
+2. The AI chain (Claude, DeepSeek, local model) writes one text per network in neutral Spanish for Spain
+   and Latin America, inside each network's limit (X 280 with the link counted as 23, Bluesky 300,
+   Threads 500, Instagram/TikTok 2200). The code adds the link, never the AI; Instagram gets
+   "🔗 Enlace en la bio". Member names from Discord chats are left out unless they organise the thing.
+3. A card in the mod review channel shows every text, its length, the main picture and how each network
+   will go out (official API, Postiz, or *a mano* when that network isn't connected). Moderators can:
+   - **✅ Publicar** to the networks ticked in the first menu;
+   - choose the **main picture** in the second menu, or reply to the card with a new picture;
+   - **✏️ Pedir cambios** (or reply to the card with text) to have the AI rewrite with their notes: a new card replaces the old one;
+   - **📝 Editar texto** to rewrite one network's text by hand, no AI;
+   - **🗑️ Descartar**.
+4. A network that fails stays ticked and the card stays open for a retry. Networks that worked are never
+   posted twice. `/redes-estado` shows the connection of each network.
+
+Optional: *Also Announce New Web Articles* (off by default) drafts an ad by itself for every article that
+goes public in *Website Categories*. Its first check only notes what is already public.
+
+Moderators should check the pictures before ✅: they come from members' messages, so look out for
+faces or anything a member wouldn't want public.
+
+**Test mode** (on by default): the whole flow works but ✅ only reports what would be posted. Untick
+*Test Mode* once the cards look right.
+
+### Which API for each network
+
+| Network | Route in this bot | What you need | Cost |
+|---|---|---|---|
+| Bluesky | direct (AT Protocol) | handle + an **app password** | free |
+| Facebook Page | direct (Meta Graph API) or Postiz | Page ID + long-lived **Page token** | free |
+| Instagram | direct (Graph API) or Postiz | professional account linked to the Page, same token | free |
+| Threads | direct (Threads API) or Postiz | long-lived Threads token (the bot renews it weekly) | free |
+| X | direct (X API v2, OAuth 1.0a) or Postiz | developer app with Read and write: 4 keys | X charges per post |
+| TikTok | direct (Content Posting API) or Postiz, by hand until then | developer app + `/redes-tiktok` | free; public posts need TikTok's audit |
+
+A network with its own keys in AMP is posted directly; otherwise it goes through Postiz if Postiz has it
+connected; otherwise the card shows the text for a moderator to post by hand.
+
+- **Official APIs** are free and have no middleman, but each network has its own developer app, review
+  and token rules. Meta covers Facebook, Instagram and Threads with one developer account (one app with the
+  Threads use case added). The app only posts to the Club's own Page and accounts, but Meta may still
+  ask for the app to be switched to Live mode, and for App Review of `pages_manage_posts` and
+  `instagram_content_publish`, before posts are public. Expect some days of paperwork; this is not verified.
+- **Postiz** ([docs](https://docs.postiz.com/public-api/introduction)) is one API key for every network,
+  including X and TikTok. *Postiz Cloud* (paid plan) uses its own approved apps, so you connect accounts
+  with a click. *Self-hosted Postiz* is free but you still create a developer app per network. Its create-post
+  endpoint is limited to about 90 posts an hour, which is plenty here.
+- **X** moved to pay-per-use in 2026: about $0.015 per post and about $0.20 per post with a link, according to
+  third-party summaries of X's prices (check the X Developer Console). Every Club post carries a link.
+- **TikTok** only takes photos or videos, and apps that haven't passed TikTok's audit can only post
+  privately. The default *TikTok Mode* is `UPLOAD`: the post lands in the TikTok app's inbox and a person
+  finishes it there within 24 hours.
+- **Instagram and TikTok need an image**: the article's featured image (JPEG size, since Instagram only takes
+  JPEG). Articles with no image are refused for those two and the card says so.
+
+Tokens and keys are AMP password fields, never in git, and Ollama never sees them. Posting state lives in
+the same SQLite file (`social_posts`, `social_seen` tables).
+
+### Setting up the official APIs
+
+Fill the fields in AMP (**Configuration > Club Ñ Web > Social posting**), restart, and run `/redes-estado`:
+each network you set up should say *API oficial*. Leave *Test Mode* ticked, try `/anuncia_en_redes` on a
+real announcement, and untick it when the cards look right. Use the Club's own accounts for everything.
+
+**Bluesky** (5 minutes)
+1. Sign in to the Club's account. Settings > Privacy and security > App passwords > Add app password.
+2. *Bluesky Handle* = the handle without @ (e.g. `clubn.bsky.social`), *Bluesky App Password* = that password.
+
+**Facebook Page and Instagram** (one Meta app for both)
+1. The Instagram account must be **professional** (Business or Creator) and linked to the Club's Facebook Page
+   (Page settings > Linked accounts, or Meta Accounts Center).
+2. [developers.facebook.com](https://developers.facebook.com/apps) > Create app, with the use cases for managing
+   a Page and for Instagram content. You (an admin of the Page) are the app's admin.
+3. Graph API Explorer: pick the app, *Get User Access Token* with `pages_show_list`, `pages_read_engagement`,
+   `pages_manage_posts`, `instagram_basic`, `instagram_content_publish` (and `business_management` if the Page
+   is in a Business portfolio). Extend it to a long-lived token in the Access Token Debugger.
+4. With that long-lived token, `GET /me/accounts` lists the Page's `id` and `access_token`. A Page token
+   obtained from a long-lived user token does not expire. Then `GET /<page id>?fields=instagram_business_account`
+   gives the Instagram account id.
+5. *Facebook Page ID*, *Instagram Account ID*, *Meta Page Token* = those three values.
+6. Meta may require the app to be in Live mode (and App Review for those permissions) before posts are
+   public. If a test post only shows to you, that is why.
+
+**Threads** (its own Meta app)
+1. developers.facebook.com > Create app with the *Access the Threads API* use case; add `threads_basic` and
+   `threads_content_publish`.
+2. App roles > Add the Club's Threads account as a *Threads Tester*, then accept the invite in Threads
+   (Settings > Account > Website permissions).
+3. Generate a user token for it in the use case settings. If it is the short-lived kind, exchange it for a
+   60-day token (`GET https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=...&access_token=...`).
+4. *Threads Token* = that token (*Threads User ID* can stay `me`). The bot renews it every week, so it
+   never reaches the 60 days.
+
+**X**
+1. [console.x.com](https://console.x.com) (or developer.x.com), signed in as the Club's account: create a
+   project and app and add credit (pay-per-use).
+2. App > User authentication settings: permissions **Read and write**, type *Web App, Automated App or Bot*,
+   callback and website `https://clubn.online`.
+3. Keys and tokens: copy the API Key and Secret, then **generate** the Access Token and Secret (after setting
+   Read and write; tokens made before that are read-only).
+4. *X API Key*, *X API Key Secret*, *X Access Token*, *X Access Token Secret*. Posts are text plus the link
+   (X shows the link card); each one is billed.
+
+**TikTok** (by hand until TikTok approves the app)
+1. [developers.tiktok.com](https://developers.tiktok.com/apps/), signed in with the Club's account: create an app,
+   add the products **Login Kit** and **Content Posting API**, and the scopes `user.info.basic`, `video.upload`,
+   `video.publish`. In Login Kit, add the redirect URI `https://clubn.online/tiktok/` (exactly as in *TikTok Redirect URI*).
+2. TikTok downloads the pictures from the website, so verify the domain that serves them (`wp.clubn.online`, and
+   `clubn.online` once production is live) under *URL properties*, usually with a DNS TXT record.
+3. Copy the Client Key and Client Secret into *TikTok Client Key* / *TikTok Client Secret* and restart.
+4. In Discord, a moderator runs `/redes-tiktok`, opens the link with the Club's TikTok account, authorises, and then
+   runs `/redes-tiktok enlace:<the address TikTok sent them to>`. The bot keeps and renews the token itself.
+5. Until the app passes TikTok's review and audit, leave *TikTok Mode* on `UPLOAD`: the photo post lands in the
+   TikTok app's inbox and a person publishes it there. After the audit, set `DIRECT_POST` and
+   *TikTok Privacy* = `PUBLIC_TO_EVERYONE`. Without the keys, TikTok cards are posted by hand.
 
 ## How a question flows
 
