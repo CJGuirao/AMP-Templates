@@ -21,8 +21,9 @@ SuperAntonia did, on the same Discord connection:
 - **/mis_redes:** creators propose changes to their own socials in the creator database; a moderator approves.
 - Mod commands: `/redes-creador`, `/generar-articulo`, `/evento-desde-mensaje`, `/evento-actualizar`,
   `/eventos`, `/directo-creador`, `/directo-quitar`, `/directos-importar`, `/directos`.
-- **Social posts** (off by default, see below): drafts for X, Bluesky, Threads, Facebook, Instagram and
-  TikTok from new web articles, reviewed and approved by a moderator. Commands `/redes-proponer`, `/redes-estado`.
+- **Social posts** (off by default, see below): `/anuncia_en_redes` turns a Discord channel, thread or
+  message, or a web article, into ads for X, Bluesky, Threads, Facebook, Instagram and TikTok; a moderator
+  reviews, edits and approves them. Also `/redes-estado`.
 
 **AI for drafts:** Claude first, then DeepSeek, then this bot's local model as the last resort. A
 provider that answers "no credits" or "bad key" is skipped for 6 hours; any other error moves on to
@@ -61,26 +62,36 @@ fail if a `clubn_web` setting is missing from AMP.
 
 ## Social posts (off by default)
 
-With **Configuration > Club Ñ Web > Social posting > Social Posting** ticked, new public articles on
-the website (by default in *Creadores_de_contenido* and *Eventos*) get a draft post for each of the
-Club's networks: X, Bluesky, Threads, Facebook, Instagram and TikTok. Nothing is ever posted
-without a moderator.
+With **Configuration > Club Ñ Web > Social posting > Social Posting** ticked, moderators (and the roles in
+*Who May Use /anuncia_en_redes*) can turn anything the Club announces into ads for its networks: X, Bluesky,
+Threads, Facebook, Instagram and TikTok. Nothing is ever posted without a moderator's ✅.
 
-1. Every 10 minutes the bot looks for articles published since the last check. The first check only
-   notes what is already public, so turning this on does not flood the mod channel. Moderators can also
-   run `/redes-proponer enlace:<article link>` (or `tema:` for something with no article).
+1. **`/anuncia_en_redes enlace:<link>`** with a link to a Discord channel, thread or message (right click >
+   Copy Message Link), or to an article on the website. Optional `notas` (what to stress, tone, audience)
+   and `enlace_publico` (the link the ads carry; by default the article, or *Default Link* for Discord).
+   The bot reads the text (the last 30 messages of a channel or thread, or the message and its thread) and
+   collects the pictures: Discord attachments and embed images (icons and avatars are skipped), or the
+   article's featured and inline images. Discord picture links expire, so they are copied into the
+   WordPress media library first.
 2. The AI chain (Claude, DeepSeek, local model) writes one text per network in neutral Spanish for Spain
    and Latin America, inside each network's limit (X 280 with the link counted as 23, Bluesky 300,
    Threads 500, Instagram/TikTok 2200). The code adds the link, never the AI; Instagram gets
-   "🔗 Enlace en la bio".
-3. A card in the mod review channel shows every text, its length, and how it will go out (official API,
-   Postiz, or *a mano* when that network isn't connected). Moderators can:
-   - **✅ Publicar** to the networks ticked in the menu under the buttons;
-   - **✏️ Pedir cambios** (or reply to the card) to have the AI rewrite with their notes: a new card replaces the old one;
+   "🔗 Enlace en la bio". Member names from Discord chats are left out unless they organise the thing.
+3. A card in the mod review channel shows every text, its length, the main picture and how each network
+   will go out (official API, Postiz, or *a mano* when that network isn't connected). Moderators can:
+   - **✅ Publicar** to the networks ticked in the first menu;
+   - choose the **main picture** in the second menu, or reply to the card with a new picture;
+   - **✏️ Pedir cambios** (or reply to the card with text) to have the AI rewrite with their notes: a new card replaces the old one;
    - **📝 Editar texto** to rewrite one network's text by hand, no AI;
    - **🗑️ Descartar**.
 4. A network that fails stays ticked and the card stays open for a retry. Networks that worked are never
    posted twice. `/redes-estado` shows the connection of each network.
+
+Optional: *Also Announce New Web Articles* (off by default) drafts an ad by itself for every article that
+goes public in *Website Categories*. Its first check only notes what is already public.
+
+Moderators should check the pictures before ✅: they come from members' messages, so look out for
+faces or anything a member wouldn't want public.
 
 **Test mode** (on by default): the whole flow works but ✅ only reports what would be posted. Untick
 *Test Mode* once the cards look right.

@@ -143,7 +143,7 @@ def test_postiz_x_text_carries_the_link():
     body = json.loads(next(q for q in rec.requests if q.url.path.endswith("/posts")).content)
     assert body["posts"][0]["settings"] == {"__type": "x", "who_can_reply_post": "everyone"}
     assert body["posts"][0]["value"][0]["content"] == "Nuevo artículo\n\nhttps://wp.clubn.online/flor/"
-    assert not any(q.url.path.endswith("/upload-from-url") for q in rec.requests)
+    assert body["posts"][0]["value"][0]["image"][0]["id"] == "m1"  # the picture goes too
 
 
 def test_instagram_without_image_is_refused_before_any_call():
@@ -244,8 +244,17 @@ class FakeChannel:
 
 
 class FakeWP:
+    base = "https://wp.clubn.online"
+
     def __init__(self, posts):
         self.posts = posts
+        self.copied = []
+
+    async def image(self, url, name):
+        if "broken" in url:
+            return None
+        self.copied.append(url)
+        return 900 + len(self.copied), f"https://wp.clubn.online/wp-content/uploads/{name}.jpg"
 
     async def _req(self, method, path, params=None, **kw):
         if path == "categories":
@@ -331,14 +340,16 @@ def test_publish_partial_failure_retries_only_what_failed(tmp_path):
     assert posted.count("ig1") == 1 and posted.count("x1") == 2  # Instagram never posted twice
 
 
-def test_done_posts_are_not_proposed_again(tmp_path):
-    app, *_ = make_app(tmp_path)
+def test_pending_card_is_reused_and_a_finished_one_starts_a_new_ad(tmp_path):
+    app, ch, *_ = make_app(tmp_path)
 
     async def go():
         row = await app.create(source="wp:9", title="T")
+        again = await app.create(source="wp:9", title="T")
+        assert again["id"] == row["id"] and len(ch.sent) == 1   # pending: same card
         app.store.save(row["id"], status="done")
-        with pytest.raises(RuntimeError, match="ya se publicó"):
-            await app.create(source="wp:9", title="T")
+        new = await app.create(source="wp:9", title="T")
+        assert new["id"] != row["id"] and new["source"].startswith("wp:9:") and new["results"] == {}
 
     run(go())
 
@@ -391,4 +402,138 @@ def test_setup_registers_the_mod_commands():
         await app.router.aclose()
         return names
 
-    assert {"redes-proponer", "redes-estado"} <= run(go())
+    assert {"anuncia_en_redes", "redes-estado"} <= run(go())
+
+
+def test_new_settings_defaults():
+    s = Settings.from_env({})
+    assert s.watch_web is False and s.command_role_ids == frozenset() and s.default_link == "https://clubn.online"
+    s = Settings.from_env({"SOCIAL_DEFAULT_LINK": "-", "SOCIAL_COMMAND_ROLE_IDS": "1, 2", "SOCIAL_WATCH_WEB": "true"})
+    assert s.default_link == "" and s.command_role_ids == {1, 2} and s.watch_web
+
+
+# ---------- reading Discord ----------
+
+def att(url, width=1200, ctype="image/png"):
+    return SimpleNamespace(url=url, filename=url.rsplit("/", 1)[-1], width=width, content_type=ctype)
+
+
+def dmsg(mid, text, author="Org", attachments=(), embeds=()):
+    return SimpleNamespace(id=mid, content=text, attachments=list(attachments), embeds=list(embeds), thread=None,
+                           author=SimpleNamespace(display_name=author),
+                           created_at=dt.datetime(2026, 11, 20, 18, 0))
+
+
+class FakeTextChannel:
+    name = "torneo-de-navidad"
+
+    def __init__(self, msgs):
+        self.msgs = msgs
+
+    async def fetch_message(self, mid):
+        return next(m for m in self.msgs if m.id == mid)
+
+    async def history(self, limit=30, oldest_first=False):
+        for m in (self.msgs if oldest_first else self.msgs[::-1])[:limit]:
+            yield m
+
+
+def discord_app(tmp_path, msgs, guild_id=761675353386254336):
+    app, ch, calls, rec = make_app(tmp_path)
+    ch.guild = SimpleNamespace(id=guild_id)
+    src = FakeTextChannel(msgs)
+    app.client = SimpleNamespace(get_channel=lambda cid: ch if cid == 555 else src if cid == 42 else None)
+    return app, ch, calls, src
+
+
+MSGS = [dmsg(1, "**Torneo de Navidad** el 20/12 a las 18:00 en Rocket League, apuntaos aquí",
+             attachments=[att("https://cdn.discordapp.com/a/cartel.png?ex=1"),
+                          att("https://cdn.discordapp.com/a/icon.png", 64)]),
+        dmsg(2, "¿Hay premio?", author="Pepe"),
+        dmsg(3, "Sí: un juego de Steam", attachments=[att("https://cdn.discordapp.com/a/broken.png")])]
+
+
+def test_discord_channel_link_reads_text_and_keeps_the_pictures(tmp_path):
+    app, ch, calls, _ = discord_app(tmp_path, MSGS)
+    data = run(app.from_link("https://discord.com/channels/761675353386254336/42"))
+    assert data["source"] == "discord:42:" and data["kind"] == "discord" and data["title"] == "torneo-de-navidad"
+    assert "Torneo de Navidad" in data["body"] and "Pepe: ¿Hay premio?" in data["body"]
+    # copied into WordPress: the 64px icon is skipped, the copy that failed is dropped
+    assert app.wp.copied == ["https://cdn.discordapp.com/a/cartel.png?ex=1"]
+    assert data["images"] == ["https://wp.clubn.online/wp-content/uploads/redes-42-1.jpg"]
+
+
+def test_discord_message_link_and_other_servers(tmp_path):
+    app, *_ = discord_app(tmp_path, MSGS)
+    data = run(app.from_link("https://discord.com/channels/761675353386254336/42/1"))
+    assert data["source"] == "discord:42:1"
+    assert data["title"] == "Torneo de Navidad el 20/12 a las 18:00 en Rocket League, apuntaos aquí"
+    assert "Pepe" not in data["body"]
+    with pytest.raises(RuntimeError, match="otro servidor"):
+        run(app.from_link("https://discord.com/channels/1/42/1"))
+
+
+def test_discord_ad_end_to_end_with_picture_menu(tmp_path):
+    msgs = MSGS[:1] + [dmsg(4, "Otro cartel", attachments=[att("https://cdn.discordapp.com/a/cartel2.jpg")])]
+    app, ch, calls, _ = discord_app(tmp_path, msgs)
+
+    async def go():
+        data = await app.from_link("https://discord.com/channels/761675353386254336/42")
+        data["link"] = "https://clubn.online"
+        return await app.create(**data, notes="Indicaciones de Mod: destaca el premio")
+
+    row = run(go())
+    assert row["status"] == "in_review" and len(row["images"]) == 2 and row["image_url"] == row["images"][0]
+    assert "destaca el premio" in calls[0][1] and "texto_de_origen" in calls[0][1]
+    card = ch.sent[-1].kw
+    ids = [c.custom_id for c in card["view"].children]
+    assert f"social:image:{row['id']}" in ids
+    assert card["embed"].image.url == row["image_url"] and len(card["embed"]) <= 6000
+
+
+def test_reply_with_a_picture_sets_the_main_image_without_ai(tmp_path):
+    app, ch, calls, _ = discord_app(tmp_path, MSGS)
+
+    async def go():
+        row = await app.create(source="discord:42:", title="T")
+        reply = SimpleNamespace(author=SimpleNamespace(bot=False, display_name="Mod", mention="@Mod"), content="",
+                                reference=SimpleNamespace(message_id=row["review_message_id"]),
+                                channel=SimpleNamespace(id=555),
+                                attachments=[att("https://cdn.discordapp.com/x/nuevo.jpg")], embeds=[], reactions=[])
+
+        async def add_reaction(e):
+            reply.reactions.append(e)
+
+        reply.add_reaction = add_reaction
+        assert await app.on_message(reply)
+        return app.store.get(row["id"]), reply
+
+    row, reply = run(go())
+    assert row["image_url"].endswith("redes-mod-1-1.jpg") and reply.reactions == ["🖼️"]
+    assert len(calls) == 1  # no rewrite
+
+
+def test_without_link_bluesky_and_facebook_post_the_picture():
+    def h(request):
+        p = request.url.path
+        if p.endswith("createSession"):
+            return httpx.Response(200, json={"accessJwt": "jwt", "did": "did:plc:1", "handle": "c.bsky.social"})
+        if request.url.host == "wp.clubn.online":
+            return httpx.Response(200, content=b"jpg", headers={"content-type": "image/jpeg"})
+        if p.endswith("uploadBlob"):
+            return httpx.Response(200, json={"blob": {"ref": "b"}})
+        if p.endswith("createRecord"):
+            return httpx.Response(200, json={"uri": "at://did:plc:1/app.bsky.feed.post/9"})
+        if p.endswith("/photos"):
+            return httpx.Response(200, json={"id": "ph1", "post_id": "1_2"})
+        return httpx.Response(404)
+
+    s = Settings(dry_run=False, bluesky_handle="c.bsky.social", bluesky_password="pw", facebook_page_id="1",
+                 meta_token="t")
+    r, rec = router(s, h)
+    post = Post("Torneo", "s", None, "https://wp.clubn.online/c.jpg")
+    assert run(r.publish("bluesky", "Torneo #ClubÑ", post)).ok
+    record = json.loads(next(q for q in rec.requests if q.url.path.endswith("createRecord")).content)["record"]
+    assert record["embed"]["$type"] == "app.bsky.embed.images"
+    fb = run(r.publish("facebook", "Torneo", post))
+    assert fb.ok and fb.url == "https://www.facebook.com/1_2"

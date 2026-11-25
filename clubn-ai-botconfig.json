@@ -1345,6 +1345,34 @@
     "EnumValues": {}
   },
   {
+    "DisplayName": "Who May Use /anuncia_en_redes",
+    "Description": "Comma-separated role ids allowed besides moderators (e.g. event organisers). Every ad still needs a moderator's ✅.",
+    "Keywords": "clubn,web,social,command,role,ids",
+    "FieldName": "WebSocialCommandRoleIds",
+    "InputType": "text",
+    "Category": "Club Ñ Web:language",
+    "Subcategory": "Social posting:campaign:9",
+    "ParamFieldName": "WebSocialCommandRoleIds",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "",
+    "EnumValues": {}
+  },
+  {
+    "DisplayName": "Default Link",
+    "Description": "Link added to ads made from Discord messages (e.g. the Club's website or a Discord invite). Write - for no link.",
+    "Keywords": "clubn,web,social,default,link",
+    "FieldName": "WebSocialDefaultLink",
+    "InputType": "text",
+    "Category": "Club Ñ Web:language",
+    "Subcategory": "Social posting:campaign:9",
+    "ParamFieldName": "WebSocialDefaultLink",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "https://clubn.online",
+    "EnumValues": {}
+  },
+  {
     "DisplayName": "Networks",
     "Description": "Comma-separated: x, bluesky, threads, facebook, instagram, tiktok. A network with no connection gets a text to post by hand.",
     "Keywords": "clubn,web,social,networks",
@@ -1357,6 +1385,23 @@
     "Required": false,
     "DefaultValue": "x,bluesky,threads,facebook,instagram,tiktok",
     "EnumValues": {}
+  },
+  {
+    "DisplayName": "Also Announce New Web Articles",
+    "Description": "Besides /anuncia_en_redes, draft an ad by itself for every new public article in the categories below.",
+    "Keywords": "clubn,web,social,watch,web",
+    "FieldName": "WebSocialWatchWeb",
+    "InputType": "checkbox",
+    "Category": "Club Ñ Web:language",
+    "Subcategory": "Social posting:campaign:9",
+    "ParamFieldName": "WebSocialWatchWeb",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "false",
+    "EnumValues": {
+      "True": "true",
+      "False": "false"
+    }
   },
   {
     "DisplayName": "Website Categories",

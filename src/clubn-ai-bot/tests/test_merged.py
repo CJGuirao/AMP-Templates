@@ -218,4 +218,4 @@ def test_merged_command_tree(merged_bot):
 def test_social_posts_stay_off_by_default(merged_bot):
     assert merged_bot.client._clubn_social is None
     names = [c.name for c in merged_bot.client.tree.get_commands()]
-    assert "redes-proponer" not in names
+    assert "anuncia_en_redes" not in names

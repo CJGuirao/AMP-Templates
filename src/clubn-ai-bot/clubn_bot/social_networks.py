@@ -56,6 +56,9 @@ class Settings:
     enabled: bool = False
     dry_run: bool = True
     review_channel_id: int | None = None
+    command_role_ids: frozenset[int] = frozenset()  # besides moderators, who may run /anuncia_en_redes
+    default_link: str = ""                         # link added to ads made from Discord
+    watch_web: bool = False                        # also draft ads for every new web article
     networks: tuple[str, ...] = NETWORKS
     wp_categories: tuple[str, ...] = ("Creadores_de_contenido", "Eventos")
     poll_min: int = 10
@@ -91,11 +94,15 @@ class Settings:
         cats = tuple(c.strip() for c in g("SOCIAL_WP_CATEGORIES", "Creadores_de_contenido,Eventos").split(",")
                      if c.strip() and c.strip() != "*")
         review = g("SOCIAL_REVIEW_CHANNEL_ID")
+        roles = frozenset(int(x) for x in re.split(r"[,\s]+", g("SOCIAL_COMMAND_ROLE_IDS")) if x.isdigit())
+        link = g("SOCIAL_DEFAULT_LINK", "https://clubn.online")  # "-" = no link
         method = g("SOCIAL_TIKTOK_METHOD", "UPLOAD").upper()
         return cls(
             enabled=_truthy(e.get("SOCIAL_ENABLED")),
             dry_run=_truthy(e.get("SOCIAL_DRY_RUN"), default=True),
             review_channel_id=int(review) if review.isdigit() else None,
+            command_role_ids=roles, default_link=link if link.startswith("https://") else "",
+            watch_web=_truthy(e.get("SOCIAL_WATCH_WEB")),
             networks=nets, wp_categories=cats,
             poll_min=num("SOCIAL_POLL_MIN", 10), max_age_hours=num("SOCIAL_MAX_AGE_HOURS", 48),
             hashtags=_hashtags(g("SOCIAL_HASHTAGS", "ClubÑ")), style=g("SOCIAL_STYLE")[:1500],
@@ -294,7 +301,7 @@ class Router:
         ids = await self.postiz_integrations()
         hdr = {"Authorization": self.s.postiz_key}
         images = []
-        if post.image_url and net in ("instagram", "tiktok", "facebook", "bluesky", "threads"):
+        if post.image_url:
             r = await self.http.post(f"{self.s.postiz_url}/upload-from-url", headers=hdr,
                                      json={"url": post.image_url})
             if r.status_code >= 400:
@@ -351,6 +358,15 @@ class Router:
                 if b.status_code == 200:
                     ext["thumb"] = b.json()["blob"]
             record["embed"] = {"$type": "app.bsky.embed.external", "external": ext}
+        elif post.image_url:  # no link: the picture itself
+            img = await self._small_image(post.image_url, 950_000)
+            if img:
+                b = await self.http.post(f"{pds}/xrpc/com.atproto.repo.uploadBlob", content=img[0],
+                                         headers=auth | {"Content-Type": img[1]})
+                if b.status_code != 200:
+                    raise _err(b, "Bluesky (imagen)")
+                record["embed"] = {"$type": "app.bsky.embed.images",
+                                   "images": [{"image": b.json()["blob"], "alt": post.title[:300]}]}
         r = await self.http.post(f"{pds}/xrpc/com.atproto.repo.createRecord", headers=auth,
                                  json={"repo": sess["did"], "collection": "app.bsky.feed.post", "record": record})
         if r.status_code != 200:
@@ -376,13 +392,19 @@ class Router:
         return f"https://graph.facebook.com/{self.s.graph_version}/{path}"
 
     async def _facebook(self, full: str, post: Post) -> Result:
-        data = {"message": full, "access_token": self.s.meta_token}
-        if post.url:
-            data["link"] = post.url
-        r = await self.http.post(self._graph(f"{self.s.facebook_page_id}/feed"), data=data)
+        tok, page = self.s.meta_token, self.s.facebook_page_id
+        if post.url or not post.image_url:  # a link preview
+            data = {"message": full, "access_token": tok}
+            if post.url:
+                data["link"] = post.url
+            r = await self.http.post(self._graph(f"{page}/feed"), data=data)
+        else:  # no link: a photo post with the text as caption
+            r = await self.http.post(self._graph(f"{page}/photos"),
+                                     data={"url": post.image_url, "caption": full, "access_token": tok})
         if r.status_code != 200:
             raise _err(r, "Facebook")
-        pid = r.json()["id"]
+        out = r.json()
+        pid = out.get("post_id") or out["id"]
         return Result(True, "direct", "publicado", url=f"https://www.facebook.com/{pid}", remote_id=pid)
 
     async def _instagram(self, full: str, post: Post) -> Result:
@@ -443,6 +465,8 @@ class Router:
         data = {"media_type": "TEXT", "text": full, "access_token": tok}
         if post.url:
             data["link_attachment"] = post.url
+        elif post.image_url:
+            data |= {"media_type": "IMAGE", "image_url": post.image_url}
         r = await self.http.post(f"{base}/{uid}/threads", data=data)
         if r.status_code != 200:
             raise _err(r, "Threads (borrador)")
