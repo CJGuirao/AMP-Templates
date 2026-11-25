@@ -31,11 +31,12 @@ import io
 import json
 import logging
 import re
+import secrets
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import discord
 from discord import app_commands
@@ -940,6 +941,48 @@ def setup(client: discord.Client, *, structured: Callable, is_mod: Callable, wp,
         else:
             await interaction.followup.send("No pude escribir los textos; el motivo está en el canal de revisión.",
                                             ephemeral=True)
+
+    @client.tree.command(name="redes-tiktok", description="Vincula la cuenta de TikTok del Club (moderadores)")
+    @app_commands.describe(enlace="Sin nada: te doy el enlace para autorizar. Después, pega aquí la dirección "
+                                  "completa a la que te llevó TikTok")
+    @app_commands.check(_mods)
+    async def redes_tiktok(interaction: discord.Interaction,
+                           enlace: app_commands.Range[str, 10, 2000] | None = None) -> None:
+        if not (s.tiktok_client_key and s.tiktok_client_secret):
+            await interaction.response.send_message("Faltan la TikTok Client Key y el Client Secret en AMP.",
+                                                    ephemeral=True)
+            return
+        if not enlace:
+            state = secrets.token_urlsafe(16)
+            store.kv_set("tiktok_state", f"{interaction.user.id}:{state}:{int(time.time())}")
+            await interaction.response.send_message(
+                "1. Abre este enlace con la cuenta de TikTok del Club y autoriza:\n"
+                f"<{router.tiktok_auth_url(state)}>\n"
+                "2. TikTok te llevará a una página de clubn.online (aunque dé error, da igual).\n"
+                "3. Copia la dirección completa de esa página y ejecuta `/redes-tiktok enlace:` con ella. "
+                "Tienes 10 minutos.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        q = parse_qs(urlsplit(enlace.strip()).query)
+        saved = (store.kv_get("tiktok_state") or "::0").split(":")
+        if (q.get("state", [""])[0] != saved[1] or saved[0] != str(interaction.user.id)
+                or time.time() - int(saved[2] or 0) > 600):
+            await interaction.followup.send("Ese enlace no corresponde a tu última petición (o caducó). "
+                                            "Empieza otra vez con `/redes-tiktok`.", ephemeral=True)
+            return
+        if "code" not in q:
+            await interaction.followup.send(f"TikTok no dio permiso: {q.get('error_description', ['?'])[0][:200]}",
+                                            ephemeral=True)
+            return
+        store.kv_set("tiktok_state", "")
+        try:
+            await router.tiktok_link(q["code"][0])
+        except Exception as e:  # noqa: BLE001
+            await interaction.followup.send(f"No pude vincularla: {str(e)[:300]}", ephemeral=True)
+            return
+        log.info("social: TikTok account linked by %s", interaction.user.id)
+        await interaction.followup.send("✅ Cuenta de TikTok vinculada. `/redes-estado` debería mostrarla como API oficial.",
+                                        ephemeral=True)
 
     @client.tree.command(name="redes-estado", description="Cómo está conectada la publicación en redes (moderadores)")
     @app_commands.check(_mods)

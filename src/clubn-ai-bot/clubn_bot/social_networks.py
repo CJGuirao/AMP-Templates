@@ -5,8 +5,10 @@ Each network is published one of three ways ("routes"), picked in this order:
           (Bluesky, Facebook Page and Instagram through Meta's Graph API, Threads);
   postiz  a Postiz workspace (cloud or self-hosted) that has that network connected;
   manual  nothing connected: the moderators get the text on the card and post it by hand.
-X is posted directly with OAuth 1.0a user keys (X bills every post: pay-per-use). TikTok has no direct
-client: its API only lets audited apps post publicly, so it goes through Postiz or by hand.
+X is posted directly with OAuth 1.0a user keys (X bills every post: pay-per-use). TikTok is posted
+directly with the Content Posting API once its app keys are set and a moderator has linked the Club's
+account (/redes-tiktok); until TikTok audits the app, posts can only go to the TikTok inbox (UPLOAD) or
+be private, so TikTok stays "by hand" until then.
 
 Nothing here decides to publish: social_posts.py calls publish() only after a moderator's ✅.
 In test mode (SOCIAL_DRY_RUN) publish() checks the route and returns without calling any API.
@@ -39,6 +41,9 @@ LIMIT = {"x": 280, "bluesky": 300, "threads": 500, "facebook": 3000, "instagram"
 NEEDS_IMAGE = {"instagram", "tiktok"}
 X_URL_LEN = 23           # X counts every link as 23 characters
 IG_LINK_NOTE = "🔗 Enlace en la bio."
+TIKTOK_PRIVACY = ("PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR", "SELF_ONLY")
+TIKTOK_API = "https://open.tiktokapis.com/v2"
+TIKTOK_SCOPES = "user.info.basic,video.upload,video.publish"
 POSTIZ_TYPES = {"x": ("x",), "bluesky": ("bluesky",), "threads": ("threads",), "facebook": ("facebook",),
                 "instagram": ("instagram", "instagram-standalone"), "tiktok": ("tiktok",)}
 
@@ -73,6 +78,11 @@ class Settings:
     postiz_url: str = "https://api.postiz.com/public/v1"
     postiz_key: str = ""
     tiktok_method: str = "UPLOAD"
+    tiktok_client_key: str = ""
+    tiktok_client_secret: str = field(default="", repr=False)
+    tiktok_refresh_token: str = field(default="", repr=False)
+    tiktok_redirect_uri: str = "https://clubn.online/tiktok/"
+    tiktok_privacy: str = "SELF_ONLY"
     bluesky_pds: str = "https://bsky.social"
     bluesky_handle: str = ""
     bluesky_password: str = field(default="", repr=False)
@@ -106,6 +116,7 @@ class Settings:
         roles = frozenset(int(x) for x in re.split(r"[,\s]+", g("SOCIAL_COMMAND_ROLE_IDS")) if x.isdigit())
         link = g("SOCIAL_DEFAULT_LINK", "https://clubn.online")  # "-" = no link
         method = g("SOCIAL_TIKTOK_METHOD", "UPLOAD").upper()
+        privacy = g("TIKTOK_PRIVACY", "SELF_ONLY").upper()
         return cls(
             enabled=_truthy(e.get("SOCIAL_ENABLED")),
             dry_run=_truthy(e.get("SOCIAL_DRY_RUN"), default=True),
@@ -118,6 +129,10 @@ class Settings:
             postiz_url=g("POSTIZ_URL", "https://api.postiz.com/public/v1").rstrip("/"),
             postiz_key=g("POSTIZ_API_KEY"),
             tiktok_method=method if method in ("UPLOAD", "DIRECT_POST") else "UPLOAD",
+            tiktok_client_key=g("TIKTOK_CLIENT_KEY"), tiktok_client_secret=g("TIKTOK_CLIENT_SECRET"),
+            tiktok_refresh_token=g("TIKTOK_REFRESH_TOKEN"),
+            tiktok_redirect_uri=g("TIKTOK_REDIRECT_URI", "https://clubn.online/tiktok/"),
+            tiktok_privacy=privacy if privacy in TIKTOK_PRIVACY else "SELF_ONLY",
             bluesky_pds=g("BLUESKY_PDS", "https://bsky.social").rstrip("/"),
             bluesky_handle=g("BLUESKY_HANDLE").lstrip("@"), bluesky_password=g("BLUESKY_APP_PASSWORD"),
             graph_version=g("META_GRAPH_VERSION", "v24.0"),
@@ -279,7 +294,7 @@ class Router:
         return found
 
     async def route(self, net: str) -> str:
-        if self.s.direct(net):
+        if self.s.direct(net) or (net == "tiktok" and self.tiktok_ready()):
             return "direct"
         if net in await self.postiz_integrations():
             return "postiz"
@@ -470,6 +485,67 @@ class Router:
             raise _err(r, "X")
         tid = r.json()["data"]["id"]
         return Result(True, "direct", "publicado", url=f"https://x.com/i/web/status/{tid}", remote_id=tid)
+
+    # ----- TikTok Content Posting API (photo posts pulled from the website) -----
+    def tiktok_refresh_token(self) -> str:
+        """The token stored by /redes-tiktok (TikTok rotates it), unless a new one was pasted in AMP."""
+        src = hashlib.sha256(self.s.tiktok_refresh_token.encode()).hexdigest()[:16]
+        stored = self._get("tiktok_refresh")
+        if stored and (not self.s.tiktok_refresh_token or self._get("tiktok_src") == src):
+            return stored
+        return self.s.tiktok_refresh_token
+
+    def tiktok_ready(self) -> bool:
+        return bool(self.s.tiktok_client_key and self.s.tiktok_client_secret and self.tiktok_refresh_token())
+
+    def tiktok_auth_url(self, state: str) -> str:
+        from urllib.parse import urlencode
+
+        return "https://www.tiktok.com/v2/auth/authorize/?" + urlencode({
+            "client_key": self.s.tiktok_client_key, "scope": TIKTOK_SCOPES, "response_type": "code",
+            "redirect_uri": self.s.tiktok_redirect_uri, "state": state})
+
+    async def _tiktok_token(self, data: dict) -> str:
+        r = await self.http.post(f"{TIKTOK_API}/oauth/token/", data={
+            "client_key": self.s.tiktok_client_key, "client_secret": self.s.tiktok_client_secret, **data},
+            headers={"Content-Type": "application/x-www-form-urlencoded"})
+        out = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+        if r.status_code != 200 or not out.get("access_token"):
+            raise PublishError(f"TikTok login: {out.get('error_description') or out.get('error') or r.status_code}")
+        self._set("tiktok_src", hashlib.sha256(self.s.tiktok_refresh_token.encode()).hexdigest()[:16])
+        self._set("tiktok_refresh", out["refresh_token"])
+        self._tiktok_access = (out["access_token"], time.time() + int(out.get("expires_in", 3600)) - 120)
+        return out["access_token"]
+
+    async def tiktok_link(self, code: str) -> None:
+        """Exchange the code TikTok put in the redirect URL; keeps the (renewable) refresh token."""
+        await self._tiktok_token({"grant_type": "authorization_code", "code": code,
+                                  "redirect_uri": self.s.tiktok_redirect_uri})
+
+    async def tiktok_access(self) -> str:
+        cached = getattr(self, "_tiktok_access", None)
+        if cached and cached[1] > time.time():
+            return cached[0]
+        return await self._tiktok_token({"grant_type": "refresh_token", "refresh_token": self.tiktok_refresh_token()})
+
+    async def _tiktok(self, full: str, post: Post) -> Result:
+        token = await self.tiktok_access()
+        upload = self.s.tiktok_method == "UPLOAD"
+        info = {"title": post.title[:90], "description": full[:4000]}
+        if not upload:
+            info |= {"privacy_level": self.s.tiktok_privacy, "disable_comment": False, "auto_add_music": True}
+        body = {"post_info": info, "media_type": "PHOTO", "post_mode": "MEDIA_UPLOAD" if upload else "DIRECT_POST",
+                "source_info": {"source": "PULL_FROM_URL", "photo_cover_index": 0, "photo_images": [post.image_url]}}
+        r = await self.http.post(f"{TIKTOK_API}/post/publish/content/init/", json=body,
+                                 headers={"Authorization": f"Bearer {token}",
+                                          "Content-Type": "application/json; charset=UTF-8"})
+        out = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+        err = out.get("error") or {}
+        if r.status_code != 200 or err.get("code", "ok") != "ok":
+            raise PublishError(f"TikTok: {err.get('code') or r.status_code}: {err.get('message', '')[:150]}")
+        note = ("en la bandeja de TikTok: hay que terminarlo en la app" if upload
+                else "publicado" if self.s.tiktok_privacy == "PUBLIC_TO_EVERYONE" else "publicado como privado")
+        return Result(True, "direct", note, remote_id=(out.get("data") or {}).get("publish_id"))
 
     # ----- Threads API (long-lived token, refreshed by the bot) -----
     def threads_token(self) -> str:

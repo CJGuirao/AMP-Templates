@@ -402,7 +402,7 @@ def test_setup_registers_the_mod_commands():
         await app.router.aclose()
         return names
 
-    assert {"anuncia_en_redes", "redes-estado"} <= run(go())
+    assert {"anuncia_en_redes", "redes-estado", "redes-tiktok"} <= run(go())
 
 
 def test_new_settings_defaults():
@@ -562,3 +562,48 @@ def test_x_oauth1_signature_is_correct():
     header = Router(s, http=httpx.AsyncClient()).x_auth("POST", "https://api.x.com/2/tweets",
                                                        nonce="abc123", timestamp="1700000000")
     assert 'oauth_signature="1Qbah5xUWfIKDIUrAKmyzH2DCK0%3D"' in header
+
+
+def test_tiktok_is_manual_until_linked_then_posts_a_photo_to_the_inbox():
+    calls = []
+
+    def h(request):
+        calls.append(request)
+        if request.url.path.endswith("/oauth/token/"):
+            form = dict(x.split("=", 1) for x in request.content.decode().split("&"))
+            assert form["client_secret"] == "cs"
+            return httpx.Response(200, json={"access_token": "act", "expires_in": 86400,
+                                             "refresh_token": "rft-" + form["grant_type"], "refresh_expires_in": 9})
+        if request.url.path.endswith("/post/publish/content/init/"):
+            assert request.headers["Authorization"] == "Bearer act"
+            return httpx.Response(200, json={"data": {"publish_id": "p_1"}, "error": {"code": "ok", "message": ""}})
+        return httpx.Response(404)
+
+    s = Settings(dry_run=False, tiktok_client_key="ck", tiktok_client_secret="cs")
+    r, _ = router(s, h)
+    assert run(r.route("tiktok")) == "manual"
+    assert "client_key=ck" in r.tiktok_auth_url("st") and "video.publish" in r.tiktok_auth_url("st")
+    run(r.tiktok_link("the-code"))
+    assert r.tiktok_refresh_token() == "rft-authorization_code" and run(r.route("tiktok")) == "direct"
+    res = run(r.publish("tiktok", "Torneo #ClubÑ", POST))
+    assert res.ok and res.remote_id == "p_1" and "bandeja" in res.detail
+    body = json.loads(calls[-1].content)
+    assert body["post_mode"] == "MEDIA_UPLOAD" and body["media_type"] == "PHOTO"
+    assert body["source_info"]["photo_images"] == [POST.image_url] and "privacy_level" not in body["post_info"]
+
+
+def test_tiktok_direct_post_uses_the_privacy_setting_and_reports_errors():
+    def h(request):
+        if request.url.path.endswith("/oauth/token/"):
+            return httpx.Response(200, json={"access_token": "act", "refresh_token": "r2", "expires_in": 9000})
+        return httpx.Response(403, json={"error": {"code": "unaudited_client_can_only_post_to_private_accounts",
+                                                   "message": "x"}})
+
+    s = Settings(dry_run=False, tiktok_client_key="ck", tiktok_client_secret="cs", tiktok_refresh_token="amp-r",
+                 tiktok_method="DIRECT_POST", tiktok_privacy="PUBLIC_TO_EVERYONE")
+    r, rec = router(s, h)
+    res = run(r.publish("tiktok", "hola", POST))
+    assert not res.ok and "unaudited" in res.detail
+    body = json.loads(rec.requests[-1].content)
+    assert body["post_mode"] == "DIRECT_POST" and body["post_info"]["privacy_level"] == "PUBLIC_TO_EVERYONE"
+    assert r.tiktok_refresh_token() == "r2"  # the rotated token wins over the one pasted in AMP

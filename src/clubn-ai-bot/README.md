@@ -105,7 +105,7 @@ faces or anything a member wouldn't want public.
 | Instagram | direct (Graph API) or Postiz | professional account linked to the Page, same token | free |
 | Threads | direct (Threads API) or Postiz | long-lived Threads token (the bot renews it weekly) | free |
 | X | direct (X API v2, OAuth 1.0a) or Postiz | developer app with Read and write: 4 keys | X charges per post |
-| TikTok | Postiz, or by hand | TikTok channel connected in Postiz | free; public posts need TikTok's audit |
+| TikTok | direct (Content Posting API) or Postiz, by hand until then | developer app + `/redes-tiktok` | free; public posts need TikTok's audit |
 
 A network with its own keys in AMP is posted directly; otherwise it goes through Postiz if Postiz has it
 connected; otherwise the card shows the text for a moderator to post by hand.
@@ -175,9 +175,18 @@ real announcement, and untick it when the cards look right. Use the Club's own a
 4. *X API Key*, *X API Key Secret*, *X Access Token*, *X Access Token Secret*. Posts are text plus the link
    (X shows the link card); each one is billed.
 
-**TikTok**: no official setup for now. Public posting needs TikTok to audit the app, so the card shows the
-caption and the picture for a moderator to post from the TikTok app. Untick it in the network menu, or remove
-`tiktok` from *Networks*, if nobody will.
+**TikTok** (by hand until TikTok approves the app)
+1. [developers.tiktok.com](https://developers.tiktok.com/apps/), signed in with the Club's account: create an app,
+   add the products **Login Kit** and **Content Posting API**, and the scopes `user.info.basic`, `video.upload`,
+   `video.publish`. In Login Kit, add the redirect URI `https://clubn.online/tiktok/` (exactly as in *TikTok Redirect URI*).
+2. TikTok downloads the pictures from the website, so verify the domain that serves them (`wp.clubn.online`, and
+   `clubn.online` once production is live) under *URL properties*, usually with a DNS TXT record.
+3. Copy the Client Key and Client Secret into *TikTok Client Key* / *TikTok Client Secret* and restart.
+4. In Discord, a moderator runs `/redes-tiktok`, opens the link with the Club's TikTok account, authorises, and then
+   runs `/redes-tiktok enlace:<the address TikTok sent them to>`. The bot keeps and renews the token itself.
+5. Until the app passes TikTok's review and audit, leave *TikTok Mode* on `UPLOAD`: the photo post lands in the
+   TikTok app's inbox and a person publishes it there. After the audit, set `DIRECT_POST` and
+   *TikTok Privacy* = `PUBLIC_TO_EVERYONE`. Without the keys, TikTok cards are posted by hand.
 
 ## How a question flows
 
