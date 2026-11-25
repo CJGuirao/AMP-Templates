@@ -55,19 +55,18 @@ class Worker:
             self._sem.release()
 
 
-class ClubNBot(discord.Client):
-    def __init__(self, cfg: Config):
-        intents = discord.Intents.none()
-        intents.guilds = True
-        if cfg.discord.answer_on_mention:
-            intents.guild_messages = True
-            intents.message_content = True  # privileged: enable it in the Developer Portal too
-        super().__init__(intents=intents, allowed_mentions=NO_PINGS)
+class Fulgencio:
+    """The question-answering feature, attachable to any discord.Client.
+
+    ClubNBot below runs it on its own; clubn_bot.merged attaches it to the Club Ñ web bot so both run
+    in one process on one Discord connection.
+    """
+
+    def __init__(self, client: discord.Client, cfg: Config, pipeline: Pipeline | None = None):
+        self.client = client
         self.cfg = cfg
-        self.tree = app_commands.CommandTree(self)
-        self.pipeline = Pipeline(cfg)
+        self.pipeline = pipeline or Pipeline(cfg)
         self.worker = Worker(self.pipeline, cfg.moderation.queue_size)
-        self._register_command()
 
     # ----- permissions -----
     def _allowed_here(self, channel_id: int, member) -> str | None:
@@ -85,7 +84,7 @@ class ClubNBot(discord.Client):
         cid = self.cfg.moderation.mod_log_channel_id
         if not cid or res.status != "refused":
             return
-        ch = self.get_channel(cid)
+        ch = self.client.get_channel(cid)
         if ch is None:
             log.warning("Moderation log channel %s not found or not visible to the bot; refusal not logged", cid)
             return
@@ -104,7 +103,7 @@ class ClubNBot(discord.Client):
         cid = self.cfg.moderation.mod_log_channel_id
         if not cid:
             return
-        ch = self.get_channel(cid)
+        ch = self.client.get_channel(cid)
         if ch is None:
             log.warning("Moderation log channel %s not found: check the ID and that the bot can see it", cid)
             return
@@ -127,7 +126,7 @@ class ClubNBot(discord.Client):
             q = (q + "…") if q else ""
 
     # ----- slash command -----
-    def _register_command(self):
+    def make_command(self) -> app_commands.Command:
         @app_commands.command(name=self.cfg.discord.command_name, description="Haz una pregunta al bot de ClubÑ")
         @app_commands.describe(pregunta="Tu pregunta o petición")
         @app_commands.guild_only()
@@ -161,41 +160,30 @@ class ClubNBot(discord.Client):
                 await interaction.followup.send(res.private_text, ephemeral=True)
             await self._mod_log(interaction.user, pregunta, res)
 
-        self.tree.add_command(ask)
+        return ask
 
-    async def setup_hook(self):
-        # wait for the local model server (started alongside us), then make sure the model is present
+    async def wait_for_model(self):
+        """Wait for the local model server (started alongside us), then make sure the model is present."""
         for attempt in range(60):
             try:
                 await self.pipeline.llm.ensure_model(log.info)
-                break
+                return
             except Exception as e:  # server still starting
                 if attempt == 59:
                     raise
                 log.info("Waiting for the model server (%s)...", e.__class__.__name__)
                 await asyncio.sleep(2)
-        gid = self.cfg.discord.guild_id
-        if gid:
-            guild = discord.Object(id=gid)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-        else:
-            await self.tree.sync()
-
-    async def on_ready(self):
-        log.info("Logged in as %s (%s)", self.user, self.user.id)
-        log.info("ClubN bot ready: /%s is available in %d server(s)", self.cfg.discord.command_name, len(self.guilds))
-        self._check_mod_log_channel()
 
     # ----- optional: answer when mentioned -----
     async def on_message(self, message: discord.Message):
-        if not self.cfg.discord.answer_on_mention or message.author.bot or not message.guild:
+        me = self.client.user
+        if not self.cfg.discord.answer_on_mention or message.author.bot or not message.guild or me is None:
             return
-        if self.user not in message.mentions:
+        if me not in message.mentions:
             return
         if self._allowed_here(message.channel.id, message.author):
             return
-        question = message.content.replace(f"<@{self.user.id}>", "").replace(f"<@!{self.user.id}>", "").strip()
+        question = message.content.replace(f"<@{me.id}>", "").replace(f"<@!{me.id}>", "").strip()
         async with message.channel.typing():
             try:
                 res = await self.worker.run(message.author.id, question)
@@ -215,6 +203,45 @@ class ClubNBot(discord.Client):
             log.warning("Could not reply in channel %s (%s)", message.channel.id, e)
         await self._mod_log(message.author, question, res)
 
-    async def close(self):
+    async def aclose(self):
         await self.pipeline.aclose()
+
+
+class ClubNBot(discord.Client):
+    """Fulgencio on its own (Club Ñ Web Features off): only the question command."""
+
+    def __init__(self, cfg: Config):
+        intents = discord.Intents.none()
+        intents.guilds = True
+        if cfg.discord.answer_on_mention:
+            intents.guild_messages = True
+            intents.message_content = True  # privileged: enable it in the Developer Portal too
+        super().__init__(intents=intents, allowed_mentions=NO_PINGS)
+        self.cfg = cfg
+        self.tree = app_commands.CommandTree(self)
+        self.fulgencio = Fulgencio(self, cfg)
+        self.pipeline = self.fulgencio.pipeline
+        self.worker = self.fulgencio.worker
+        self.tree.add_command(self.fulgencio.make_command())
+
+    async def setup_hook(self):
+        await self.fulgencio.wait_for_model()
+        gid = self.cfg.discord.guild_id
+        if gid:
+            guild = discord.Object(id=gid)
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+        else:
+            await self.tree.sync()
+
+    async def on_ready(self):
+        log.info("Logged in as %s (%s)", self.user, self.user.id)
+        log.info("ClubN bot ready: /%s is available in %d server(s)", self.cfg.discord.command_name, len(self.guilds))
+        self.fulgencio._check_mod_log_channel()
+
+    async def on_message(self, message: discord.Message):
+        await self.fulgencio.on_message(message)
+
+    async def close(self):
+        await self.fulgencio.aclose()
         await super().close()

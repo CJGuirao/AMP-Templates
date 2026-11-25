@@ -318,11 +318,11 @@ def test_truncation_keeps_a_valid_citation_or_refuses():
 
 def test_public_message_fits_discord_limit():
     from types import SimpleNamespace
-    from clubn_bot.bot import ClubNBot
+    from clubn_bot.bot import Fulgencio
     from clubn_bot.pipeline import Result
     user = SimpleNamespace(display_name="*_~" * 20)
     res = Result("answered", public_text="x" * 1590 + "\nFuentes:\n[1] T <https://e.com/a>")
-    text = ClubNBot._public(None, user, "_*" * 300, res)
+    text = Fulgencio._public(None, user, "_*" * 300, res)
     assert len(text) <= 2000 and text.endswith("<https://e.com/a>")
 
 
@@ -426,7 +426,7 @@ def test_prompt_cannot_remove_citation_requirement(tmp_path):
 def test_mod_log_failure_does_not_break_the_command(caplog):
     from types import SimpleNamespace
     import discord
-    from clubn_bot.bot import ClubNBot
+    from clubn_bot.bot import Fulgencio
     from clubn_bot.pipeline import Result
 
     class NoAccessChannel:
@@ -435,18 +435,18 @@ def test_mod_log_failure_does_not_break_the_command(caplog):
             raise discord.Forbidden(resp, {"code": 50001, "message": "Missing Access"})
 
     cfg = load_config({"CLUBN_MOD_LOG_CHANNEL_ID": "789"})
-    fake = SimpleNamespace(cfg=cfg, get_channel=lambda cid: NoAccessChannel())
+    fake = SimpleNamespace(cfg=cfg, client=SimpleNamespace(get_channel=lambda cid: NoAccessChannel()))
     user = SimpleNamespace(mention="<@1>")
     res = Result("refused", category="spam", reason="r")
     with caplog.at_level("WARNING"):
-        asyncio.run(ClubNBot._mod_log(fake, user, "pregunta", res))  # must not raise
+        asyncio.run(Fulgencio._mod_log(fake, user, "pregunta", res))  # must not raise
     assert "Could not write to moderation log channel 789" in caplog.text
 
     caplog.clear()
-    fake = SimpleNamespace(cfg=cfg, get_channel=lambda cid: None)
+    fake = SimpleNamespace(cfg=cfg, client=SimpleNamespace(get_channel=lambda cid: None))
     with caplog.at_level("WARNING"):
-        asyncio.run(ClubNBot._mod_log(fake, user, "pregunta", res))
-        ClubNBot._check_mod_log_channel(fake)
+        asyncio.run(Fulgencio._mod_log(fake, user, "pregunta", res))
+        Fulgencio._check_mod_log_channel(fake)
     assert caplog.text.count("789") == 2
 
 

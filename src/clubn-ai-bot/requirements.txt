@@ -2,3 +2,8 @@ discord.py==2.7.1
 httpx==0.28.1
 ddgs==9.16.1
 trafilatura==2.3.1
+# Club Ñ web features (clubn_web)
+anthropic>=0.75,<1
+beautifulsoup4>=4.12,<5
+pydantic>=2.7,<3
+tzdata
