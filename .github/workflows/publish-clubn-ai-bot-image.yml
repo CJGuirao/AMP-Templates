@@ -48,12 +48,37 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Build once into the runner, scan it, and only then publish (same cached layers).
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/clubn-ai-bot/Dockerfile
-          # pull requests only prove the image builds; main publishes it
-          push: ${{ github.event_name != 'pull_request' }}
+          load: true
+          tags: amp-clubn-ai-bot:scan
+      - name: Vulnerability scan (fails on fixable critical CVEs)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: amp-clubn-ai-bot:scan
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+      - name: Fail on fixable critical CVEs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: amp-clubn-ai-bot:scan
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+      - uses: docker/build-push-action@v6
+        if: github.event_name != 'pull_request'
+        with:
+          context: .
+          file: docker/clubn-ai-bot/Dockerfile
+          # pull requests only prove the image builds and passes the scan; main publishes it
+          push: true
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
