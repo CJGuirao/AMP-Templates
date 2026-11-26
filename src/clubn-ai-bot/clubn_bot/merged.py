@@ -12,6 +12,8 @@ source folder (tools/sync_clubn_web.py). Everything that adapts it to Fulgencio 
 - SuperAntonia's old bot.db, if it was left next to clubn_web.db, is merged in once on startup
   (legacy_db.py), and web_guards.py stops a missing database row from re-asking for creators who
   already have an article and joins a scheduled event to the same event already followed from a message;
+- ledger.py keeps each creator's and event's status in a private Discord channel too, and fills the
+  database back from it on startup, so the state no longer depends on where the database file is;
 - optionally (SOCIAL_ENABLED, off by default) the social posts workflow in social_posts.py.
 """
 from __future__ import annotations
@@ -68,7 +70,14 @@ def build(cfg: Config, token: str, *, local_llm=None, pipeline=None):
     client = web.bot
     from . import web_guards
 
-    web_guards.install(web, importlib.import_module("clubn_web.events"), importlib.import_module("clubn_web.db"))
+    web_events, web_db = importlib.import_module("clubn_web.events"), importlib.import_module("clubn_web.db")
+    web_guards.install(web, web_events, web_db)
+    from . import ledger as ledger_mod
+
+    web_db.init()  # tables must exist before the ledger wraps them (setup_hook runs init() again, harmlessly)
+    web_db.events_init()
+    ledger = ledger_mod.setup(client, web, web_events, web_db)
+    client._clubn_ledger = ledger
 
     fulgencio = Fulgencio(client, cfg, pipeline=pipeline)
     tree = client.tree
@@ -103,6 +112,8 @@ def build(cfg: Config, token: str, *, local_llm=None, pipeline=None):
 
     async def setup_hook():
         client._clubn_warm_task = asyncio.get_running_loop().create_task(_warm_model(fulgencio))
+        if ledger is not None:
+            client._clubn_ledger_task = asyncio.get_running_loop().create_task(ledger.start())
         if social is not None:
             from . import social_posts
 
@@ -126,6 +137,8 @@ def build(cfg: Config, token: str, *, local_llm=None, pipeline=None):
     async def close():
         try:
             await fulgencio.aclose()
+            if getattr(client, "_clubn_ledger_task", None) is not None:
+                client._clubn_ledger_task.cancel()
             if social is not None:
                 if social._task is not None:
                     social._task.cancel()
