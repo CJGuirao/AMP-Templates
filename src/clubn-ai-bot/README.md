@@ -50,6 +50,14 @@ seen, /mis_redes audit), upload its `bot.db` (from the `creator-bot-data` volume
 The console log lists any creator put back to "published" whose article was drafted a second time.
 Creators with no row are also checked against WordPress before the bot drafts anything for them.
 
+**State ledger in Discord:** each creator's and event's status (WordPress post, review card, event
+dates, threads, calendar entry) is also kept as one bot message per item in a private Discord channel,
+by default the Creator Database Thread (the live checker ignores these messages and vice versa).
+On every start, before the first sweep, the bot reads it and fills in anything the database is missing
+or behind on, so a lost or replaced `clubn_web.db` no longer re-asks for creators or drops events.
+Setting: Configuration > Club Ñ Web > Discord and creators > **State Ledger Channel ID** (blank = the
+Creator Database Thread, 0 = off). The first start writes the existing rows, about one per second.
+
 **Tools** (from the instance console or a shell in the container):
 ```
 cd /AMP/clubn-ai-bot/app

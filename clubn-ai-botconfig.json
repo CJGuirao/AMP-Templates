@@ -618,6 +618,20 @@
     "EnumValues": {}
   },
   {
+    "DisplayName": "State Ledger Channel ID",
+    "Description": "Private channel where the bot keeps a copy of each creator's and event's status, read back on startup if the database lost it. Blank = the Creator Database Thread. 0 = off.",
+    "Keywords": "clubn,web,ledger,channel,id",
+    "FieldName": "WebLedgerChannelId",
+    "InputType": "text",
+    "Category": "Club Ñ Web:language",
+    "Subcategory": "Discord and creators:group:1",
+    "ParamFieldName": "WebLedgerChannelId",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "",
+    "EnumValues": {}
+  },
+  {
     "DisplayName": "Daily Sweep Hour",
     "Description": "Hour (in the Timezone setting) of the daily creator sweep.",
     "Keywords": "clubn,web,daily,sweep,hour",

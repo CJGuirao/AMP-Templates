@@ -39,6 +39,9 @@ SETTINGS: list[tuple[str, str, str, str, str, str, str]] = [
      "Also write articles for people who already had the creator role."),
     ("BACKFILL_PER_SWEEP", "WebBackfillPerSweep", "Existing Creators Per Day", "number", "3", DISCORD,
      "At most this many existing creators per daily sweep, so the mod channel isn't flooded."),
+    ("LEDGER_CHANNEL_ID", "WebLedgerChannelId", "State Ledger Channel ID", "text", "", DISCORD,
+     "Private channel where the bot keeps a copy of each creator's and event's status, read back on startup "
+     "if the database lost it. Blank = the Creator Database Thread. 0 = off."),
     ("DAILY_SWEEP_HOUR", "WebDailySweepHour", "Daily Sweep Hour", "number", "9", DISCORD,
      "Hour (in the Timezone setting) of the daily creator sweep."),
     # ----- Events -----
