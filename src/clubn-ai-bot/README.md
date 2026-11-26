@@ -42,9 +42,13 @@ live checker only trusts database messages written by itself. Turn on the **Serv
 SuperAntonia's old `/fulgencio` placeholder. Only one copy may run at a time: stop the old
 SuperAntonia container before starting this, or every draft and card is made twice.
 
-**State:** SQLite at `/AMP/clubn-ai-bot/data/clubn_web.db`. To keep the history (articles in review,
-followed events, Momentazos seen, /mis_redes audit), copy `bot.db` from SuperAntonia's
-`creator-bot-data` volume to that path before the first start.
+**State:** SQLite at `/AMP/clubn-ai-bot/data/clubn_web.db` (instance storage: kept across Update
+and Restart). To keep SuperAntonia's history (articles done or in review, followed events, Momentazos
+seen, /mis_redes audit), upload its `bot.db` (from the `creator-bot-data` volume) to
+`/AMP/clubn-ai-bot/data/bot.db` and start or restart the instance: it is merged into `clubn_web.db` once
+(a backup `clubn_web.db.before-import-<time>` is made first) and renamed to `bot.db.imported-<time>`.
+The console log lists any creator put back to "published" whose article was drafted a second time.
+Creators with no row are also checked against WordPress before the bot drafts anything for them.
 
 **Tools** (from the instance console or a shell in the container):
 ```

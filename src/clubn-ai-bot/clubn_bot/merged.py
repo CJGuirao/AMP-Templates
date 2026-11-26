@@ -9,6 +9,9 @@ source folder (tools/sync_clubn_web.py). Everything that adapts it to Fulgencio 
 - the AI chain Claude -> DeepSeek -> Fulgencio's local model for article and event drafts;
 - the local model is checked/downloaded in the background, so the web features start straight away;
 - "ClubN bot ready" is still printed on ready, which is what AMP waits for;
+- SuperAntonia's old bot.db, if it was left next to clubn_web.db, is merged in once on startup
+  (legacy_db.py), and web_guards.py stops a missing database row from re-asking for creators who
+  already have an article and joins a scheduled event to the same event already followed from a message;
 - optionally (SOCIAL_ENABLED, off by default) the social posts workflow in social_posts.py.
 """
 from __future__ import annotations
@@ -56,12 +59,16 @@ def build(cfg: Config, token: str, *, local_llm=None, pipeline=None):
     from .llm import LLM
 
     prepare_env(cfg, token)
+    _import_superantonia_db(os.environ["DB_PATH"])
     try:
         web = importlib.import_module("clubn_web.main")
         writer = importlib.import_module("clubn_web.writer")
     finally:
         os.environ.pop("DISCORD_TOKEN", None)  # nothing we start later needs it in its environment
     client = web.bot
+    from . import web_guards
+
+    web_guards.install(web, importlib.import_module("clubn_web.events"), importlib.import_module("clubn_web.db"))
 
     fulgencio = Fulgencio(client, cfg, pipeline=pipeline)
     tree = client.tree
@@ -133,6 +140,17 @@ def build(cfg: Config, token: str, *, local_llm=None, pipeline=None):
     client.on_ready = on_ready
     client.close = close
     return client, fulgencio, chain
+
+
+def _import_superantonia_db(db_path: str) -> None:
+    """Merge SuperAntonia's bot.db, if it was left next to clubn_web.db, before anything reads the database."""
+    from . import legacy_db
+
+    try:
+        legacy_db.import_if_present(db_path)
+    except Exception:
+        log.exception("Could not import SuperAntonia's %s; it stays in place and is tried again on the next start",
+                      legacy_db.LEGACY_NAME)
 
 
 async def _warm_model(fulgencio) -> None:
