@@ -27,6 +27,7 @@ class LLMConfig:
     allow_remote: bool = False  # refuse non-loopback model endpoints unless explicitly allowed
     system_prompt: str = ""  # admin instructions for answers; can't override the fixed safety/citation rules
     personality: str = ""  # tone and style of answers
+    answer_mode: str = "relaxed"  # "strict": only cited sources; "relaxed": labelled general knowledge allowed
 
 
 @dataclass
@@ -93,6 +94,7 @@ ENV_MAP: dict[str, tuple[str, str]] = {
     "CLUBN_LLM_ALLOW_REMOTE": ("llm", "allow_remote"),
     "CLUBN_SYSTEM_PROMPT": ("llm", "system_prompt"),
     "CLUBN_PERSONALITY": ("llm", "personality"),
+    "CLUBN_ANSWER_MODE": ("llm", "answer_mode"),
     "CLUBN_KNOWLEDGE_DIR": ("search", "knowledge_dir"),
     "CLUBN_WIKIPEDIA_LANGS": ("search", "wikipedia_langs"),
     "CLUBN_WEB_SEARCH": ("search", "web_search"),

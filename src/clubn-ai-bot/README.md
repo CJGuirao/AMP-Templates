@@ -287,6 +287,7 @@ To update the bot later, press Update and restart. "Bot Source Version" can pin 
 | Answer When Mentioned | `CLUBN_ANSWER_ON_MENTION` | off |
 | System Prompt | `CLUBN_SYSTEM_PROMPT` | blank (`\n` = new line) |
 | Personality | `CLUBN_PERSONALITY` | friendly Club Ñ veteran, informal "tú" |
+| Answer Mode | `CLUBN_ANSWER_MODE` | `relaxed` (general knowledge allowed, labelled); `strict` = sources only |
 | Answer Model | `CLUBN_MODEL` | `hf.co/LiquidAI/LFM2.5-24B-A2B-GGUF:Q4_K_M` |
 | Rules Check Model | `CLUBN_CHECK_MODEL` | `hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0` |
 | Unload Model After Idle | `CLUBN_KEEP_ALIVE` | `30m` |
@@ -312,8 +313,18 @@ To update the bot later, press Update and restart. "Bot Source Version" can pin 
 tone. They are placed before the bot's fixed rules, and the prompt tells the model the fixed rules win
 on any conflict. More importantly, the guarantees don't depend on the model obeying: the rules check
 happens before (with its own prompt, which these settings don't touch), and after the model answers
-the code still drops any answer without a valid citation, strips links and mentions, and runs the
-output check against the server rules. Both fields are limited to 2000 characters each.
+the code still strips links and mentions and runs the output check against the server rules.
+Both fields are limited to 2000 characters each.
+
+## Answer mode
+
+- **Relaxed** (default): the server's sources come first and are cited. When they don't cover a
+  general question (streaming and OBS setup, hardware, software, games in general...), the bot answers
+  from the model's general knowledge and adds a note saying it isn't from club sources. Facts about
+  ClubÑ itself (members, staff, events, dates, rules, servers) must still come from the sources; if
+  they don't, the bot says it doesn't know.
+- **Strict**: only what the sources say, always cited; any answer without a valid citation is dropped
+  and the bot says it couldn't find reliable sources.
 
 ## Security
 
