@@ -150,6 +150,23 @@
     "EnumValues": {}
   },
   {
+    "DisplayName": "Answer Mode",
+    "Description": "Relaxed: answers from the server's sources first (with citations), and general questions they don't cover, like streaming setup or tech help, from the model's general knowledge, labelled as such. Facts about ClubÑ still only come from the sources. Strict: only answers what the sources say, otherwise it says it doesn't know.",
+    "Keywords": "answer,mode,strict,relaxed,sources,knowledge",
+    "FieldName": "AnswerMode",
+    "InputType": "enum",
+    "Category": "ClubÑ AI Bot:smart_toy",
+    "Subcategory": "Answer Style:theater_comedy:2",
+    "ParamFieldName": "AnswerMode",
+    "IncludeInCommandLine": false,
+    "Required": false,
+    "DefaultValue": "relaxed",
+    "EnumValues": {
+      "relaxed": "Relaxed (general knowledge allowed)",
+      "strict": "Strict (sources only)"
+    }
+  },
+  {
     "DisplayName": "Answer Model",
     "Description": "Ollama model that writes the answers. Default is Liquid AI LFM2.5-24B-A2B at Q4_K_M: a mixture-of-experts model with about 2B active parameters, so it writes at small-model speed on CPU. Needs about 15 GB of RAM. On a machine with 8 GB use hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_0 instead.",
     "Keywords": "model,lfm3,liquid,ollama",
